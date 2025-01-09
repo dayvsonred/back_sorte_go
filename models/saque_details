@@ -1,0 +1,13 @@
+package models
+
+import "time"
+
+type SaqueDetails struct {
+	ID           string    `json:"id" db:"id"`
+	IDSaqueConta string    `json:"id_saque_conta" db:"id_saque_conta"`
+	Valor        float64   `json:"valor" db:"valor"`
+	Realizado    bool      `json:"realizado" db:"realizado"`
+	Error        string    `json:"error" db:"error"`
+	DateCreate   time.Time `json:"date_create" db:"date_create"`
+	DateUpdate   time.Time `json:"date_update" db:"date_update"`
+}

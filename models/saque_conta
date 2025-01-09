@@ -1,0 +1,22 @@
+package models
+
+import "time"
+
+type SaqueConta struct {
+	ID         string    `json:"id" db:"id"`
+	IDUser     string    `json:"id_user" db:"id_user"`
+	Banco      string    `json:"banco" db:"banco"`
+	BancoNome  string    `json:"banco_nome" db:"banco_nome"`
+	Conta      string    `json:"conta" db:"conta"`
+	Agencia    string    `json:"agencia" db:"agencia"`
+	Digito     string    `json:"digito" db:"digito"`
+	IsUser     bool      `json:"is_user" db:"is_user"`
+	CPF        string    `json:"cpf" db:"cpf"`
+	Pix        string    `json:"pix" db:"pix"`
+	Telefone   string    `json:"telefone" db:"telefone"`
+	Endereco   string    `json:"endereco" db:"endereco"`
+	Active     bool      `json:"active" db:"active"`
+	Dell       bool      `json:"dell" db:"dell"`
+	DateCreate time.Time `json:"date_create" db:"date_create"`
+	DateUpdate time.Time `json:"date_update" db:"date_update"`
+}
