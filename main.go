@@ -32,6 +32,7 @@ func main() {
 	router := routes.SetupRoutes(db)
 
 	// Iniciar o servidor
-	log.Println("Servidor rodando na porta 8080...")
-	log.Fatal(http.ListenAndServe(":8080", router))
+	portServerRum := config.GetPortServerStart()
+	log.Println("Servidor rodando na porta :", portServerRum, "...")
+	log.Fatal(http.ListenAndServe(":"+portServerRum, router))
 }

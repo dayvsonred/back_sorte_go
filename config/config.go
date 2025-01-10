@@ -23,3 +23,13 @@ func GetDatabaseURL() string {
 	}
 	return dbURL
 }
+
+
+// GetDatabaseURL retorna a URL de conexão com o banco de dados
+func GetPortServerStart() string {
+	port := os.Getenv("SERVER_PORT")
+	if port == "" {
+		log.Fatal("SERVER_PORT não definida nas variáveis de ambiente.")
+	}
+	return port
+}

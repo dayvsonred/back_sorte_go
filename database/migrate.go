@@ -42,6 +42,13 @@ func RunMigrations(db *sql.DB) error {
 			role_name VARCHAR(255) NOT NULL
 		);`,
 
+		// Inserção da role ROLE_OPERATOR
+		`INSERT INTO core.role (role_name) VALUES ('ROLE_OPERATOR');`,
+		
+		// Inserção da role ROLE_ADMIN
+		`INSERT INTO core.role (role_name) VALUES ('ROLE_ADMIN');`,
+		
+
 		// Tabela user_role
 		`CREATE TABLE IF NOT EXISTS core.user_role (
 			id_user UUID REFERENCES core.user(id),

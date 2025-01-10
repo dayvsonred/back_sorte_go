@@ -7,6 +7,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9 // Driver PostgreSQL
+	golang.org/x/crypto v0.32.0
 )
 
 replace github.com/lib/pq => github.com/lib/pq v1.10.9

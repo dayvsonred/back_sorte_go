@@ -10,6 +10,9 @@ import (
 
 func SetupRoutes(db *sql.DB) *mux.Router {
 	router := mux.NewRouter()
+	
+	// Health Check
+	router.HandleFunc("/health", handlers.HealthCheckHandler()).Methods("GET")
 
 	// Rotas de usuário
 	router.HandleFunc("/users", handlers.CreateUserHandler(db)).Methods("POST")

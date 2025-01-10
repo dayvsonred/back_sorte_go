@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"BACK_SORTE_GO/models"
 )
 
-// CreateUserHandler lida com a criação de um novo usuário
 func CreateUserHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -20,22 +20,39 @@ func CreateUserHandler(db *sql.DB) http.HandlerFunc {
 			CPF      string `json:"cpf"`
 		}
 
-		// Decodificar o corpo da requisição JSON
+		// Decodificar JSON
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Erro ao decodificar o JSON", http.StatusBadRequest)
 			return
 		}
 
-		// Validar os campos obrigatórios
+		// Validar campos obrigatórios
 		if req.Name == "" || req.Email == "" || req.Password == "" || req.CPF == "" {
 			http.Error(w, "Todos os campos (name, email, password, cpf) são obrigatórios", http.StatusBadRequest)
 			return
 		}
 
-		// Gerar um UUID para o usuário (se necessário)
-		userID := uuid.NewString()
+		// Verificar duplicação de email
+		var exists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM core.user WHERE email = $1)", req.Email).Scan(&exists)
+		if err != nil {
+			http.Error(w, "Erro ao verificar duplicação de email: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if exists {
+			http.Error(w, "O email já está em uso", http.StatusBadRequest)
+			return
+		}
 
-		// Obter a data atual para `DateCreate`
+		// Hash da senha
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			http.Error(w, "Erro ao processar a senha", http.StatusInternalServerError)
+			return
+		}
+
+		// Gerar UUID e data atual
+		userID := uuid.NewString()
 		now := time.Now()
 
 		// Criar o modelo do usuário
@@ -43,13 +60,12 @@ func CreateUserHandler(db *sql.DB) http.HandlerFunc {
 			ID:         userID,
 			Name:       req.Name,
 			Email:      req.Email,
-			Password:   req.Password,
+			Password:   string(hashedPassword),
 			CPF:        req.CPF,
 			Active:     true,
 			Inicial:    false,
 			Dell:       false,
 			DateCreate: now,
-			DateUpdate: now, // Define como NULL no banco
 		}
 
 		// Query de inserção
@@ -57,19 +73,23 @@ func CreateUserHandler(db *sql.DB) http.HandlerFunc {
 			INSERT INTO core.user (id, name, email, password, cpf, active, inicial, dell, date_create, date_update)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		`
-
-		// Executar a query
-		_, err := db.Exec(query, user.ID, user.Name, user.Email, user.Password, user.CPF, user.Active, user.Inicial, user.Dell, user.DateCreate, nil)
+		_, err = db.Exec(query, user.ID, user.Name, user.Email, user.Password, user.CPF, user.Active, user.Inicial, user.Dell, user.DateCreate, nil)
 		if err != nil {
 			http.Error(w, "Erro ao criar o usuário: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Retornar resposta de sucesso
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{
+		// Resposta de sucesso
+		jsonResponse(w, http.StatusCreated, map[string]string{
 			"message": "Usuário criado com sucesso",
 			"id":      user.ID,
 		})
 	}
+}
+
+// Função auxiliar para resposta JSON
+func jsonResponse(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
 }
