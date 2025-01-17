@@ -1,3 +1,7 @@
+github.com/efipay/sdk-go-apis-efi v0.0.0-20231207185217-6dca10834f8f h1:bPxzJ5juWV1iJG1CAyFCZHB8L+lGkAABknqxyG1Zhmw=
+github.com/efipay/sdk-go-apis-efi v0.0.0-20231207185217-6dca10834f8f/go.mod h1:vVznPf3mGvcnz2AycfN6uK3sCTvp2NFKPcz+6NIkmC4=
+github.com/golang-jwt/jwt/v4 v4.5.1 h1:JdqV9zKUdtaa9gdPlywC3aeoEsR681PlKC+4F5gQgeo=
+github.com/golang-jwt/jwt/v4 v4.5.1/go.mod h1:m21LjoU+eqJr34lmDMbreY2eSTRJ1cv77w39/MY0Ch0=
 github.com/google/uuid v1.3.0 h1:t6JiXgmwXMjEs8VusXIJk2BXHsn+wx8BZdTaoZ5fu7I=
 github.com/google/uuid v1.3.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=

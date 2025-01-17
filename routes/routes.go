@@ -17,5 +17,17 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	// Rotas de usuário
 	router.HandleFunc("/users", handlers.CreateUserHandler(db)).Methods("POST")
 
+	// Rota para fazer login com usuario email e senha retorna tokemn
+	router.HandleFunc("/login", handlers.LoginHandler(db)).Methods("POST")
+
+	// Rota para criar donation valida tokemn
+	router.HandleFunc("/donation", handlers.DonationHandler(db)).Methods("POST")
+
+	// Rota testa token e gerado pelo certificado e valido
+	//router.HandleFunc("/testToken", handlers.TestTokenHandler()).Methods("GET")
+
+	//rota para crair pix teste 
+	router.HandleFunc("/pix/create", handlers.TestPixTokenHandler()).Methods("POST")
+
 	return router
 }
