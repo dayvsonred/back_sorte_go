@@ -6,6 +6,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"BACK_SORTE_GO/handlers"
+	"BACK_SORTE_GO/middleware"
 )
 
 func SetupRoutes(db *sql.DB) *mux.Router {
@@ -18,7 +19,7 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	router.HandleFunc("/users", handlers.CreateUserHandler(db)).Methods("POST")
 
 	// Rota para fazer login com usuario email e senha retorna tokemn
-	router.HandleFunc("/login", handlers.LoginHandler(db)).Methods("POST")
+	router.Handle("/login", middleware.CorsMiddleware(handlers.LoginHandler(db))).Methods("POST")
 
 	// Rota para criar donation valida tokemn
 	router.HandleFunc("/donation", handlers.DonationHandler(db)).Methods("POST")
