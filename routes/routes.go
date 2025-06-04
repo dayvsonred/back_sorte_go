@@ -2,11 +2,13 @@ package routes
 
 import (
 	"database/sql"
+	"net/http"
 	//"net/http"
 
-	"github.com/gorilla/mux"
 	"BACK_SORTE_GO/handlers"
 	"BACK_SORTE_GO/middleware"
+
+	"github.com/gorilla/mux"
 )
 
 func SetupRoutes(db *sql.DB) *mux.Router {
@@ -20,6 +22,10 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 
 	// Rota para fazer login com usuario email e senha retorna tokemn
 	router.Handle("/login", middleware.CorsMiddleware(handlers.LoginHandler(db))).Methods("POST")
+
+	router.Handle("/login", middleware.CorsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	}))).Methods("OPTIONS")
 
 	// Rota para criar donation valida tokemn
 	router.HandleFunc("/donation", handlers.DonationHandler(db)).Methods("POST")
