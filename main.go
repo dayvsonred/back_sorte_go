@@ -7,6 +7,7 @@ import (
 	"BACK_SORTE_GO/config"
 	"BACK_SORTE_GO/database"
 	"BACK_SORTE_GO/routes"
+	"BACK_SORTE_GO/middleware"
 )
 
 func main() {
@@ -34,5 +35,5 @@ func main() {
 	// Iniciar o servidor
 	portServerRum := config.GetPortServerStart()
 	log.Println("Servidor rodando na porta :", portServerRum, "...")
-	log.Fatal(http.ListenAndServe(":"+portServerRum, router))
+	log.Fatal(http.ListenAndServe(":8798", middleware.CorsMiddleware(router)))
 }
