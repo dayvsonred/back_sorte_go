@@ -172,3 +172,168 @@ func UserPasswordChangeHandler(db *sql.DB) http.HandlerFunc {
 		})
 	}
 }
+
+func UserBankAccountHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Obter token
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
+			return
+		}
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+		// Parse do token
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecretKey, nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Token inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Extrair id_user
+		idUser, ok := claims["sub"].(string)
+		if !ok || idUser == "" {
+			http.Error(w, "ID do usuário inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Estrutura da requisição
+		var req struct {
+			Banco     string `json:"banco"`
+			BancoNome string `json:"banco_nome"`
+			Conta     string `json:"conta"`
+			Agencia   string `json:"agencia"`
+			Digito    string `json:"digito"`
+			CPF       string `json:"cpf"`
+			Telefone  string `json:"telefone"`
+			Pix       string `json:"pix"`
+		}
+
+		// Decodificar JSON
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Erro ao processar o JSON", http.StatusBadRequest)
+			return
+		}
+
+		// Validar campos obrigatórios
+		if req.Banco == "" || req.BancoNome == "" || req.Conta == "" || req.Agencia == "" || req.Digito == "" || req.CPF == "" || req.Telefone == "" {
+			http.Error(w, "Todos os campos são obrigatórios", http.StatusBadRequest)
+			return
+		}
+
+		// Inserir no banco
+		id := uuid.NewString()
+		_, err = db.Exec(`
+			INSERT INTO core.saque_conta (
+				id, id_user, banco, banco_nome, conta, agencia, digito, cpf, telefone, pix, active, dell, date_create
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, false, NOW()
+			)
+		`, id, idUser, req.Banco, req.BancoNome, req.Conta, req.Agencia, req.Digito, req.CPF, req.Telefone, req.Pix)
+
+		if err != nil {
+			http.Error(w, "Erro ao salvar os dados bancários: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		jsonResponse(w, http.StatusCreated, map[string]string{
+			"message": "Conta bancária cadastrada com sucesso",
+			"id":      id,
+		})
+	}
+}
+
+func UserBankAccountUpdateHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Validar e extrair o token
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
+			return
+		}
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecretKey, nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Token inválido", http.StatusUnauthorized)
+			return
+		}
+
+		idUser, ok := claims["sub"].(string)
+		if !ok || idUser == "" {
+			http.Error(w, "ID do usuário inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Estrutura da requisição
+		var req struct {
+			IDContaOld string `json:"id_conta_old"`
+			Banco      string `json:"banco"`
+			BancoNome  string `json:"banco_nome"`
+			Conta      string `json:"conta"`
+			Agencia    string `json:"agencia"`
+			Digito     string `json:"digito"`
+			CPF        string `json:"cpf"`
+			Telefone   string `json:"telefone"`
+			Pix        string `json:"pix"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Erro ao processar o JSON", http.StatusBadRequest)
+			return
+		}
+
+		// Verificar se a conta antiga pertence ao usuário e está ativa
+		var exists bool
+		err = db.QueryRow(`
+			SELECT EXISTS (
+				SELECT 1 FROM core.saque_conta 
+				WHERE id = $1 AND id_user = $2 AND active = true AND dell = false
+			)
+		`, req.IDContaOld, idUser).Scan(&exists)
+		if err != nil {
+			http.Error(w, "Erro ao verificar conta antiga: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !exists {
+			http.Error(w, "Conta antiga não encontrada ou não pertence ao usuário", http.StatusForbidden)
+			return
+		}
+
+		// Desativar conta antiga
+		_, err = db.Exec(`
+			UPDATE core.saque_conta 
+			SET active = false, dell = true, date_update = NOW()
+			WHERE id = $1
+		`, req.IDContaOld)
+		if err != nil {
+			http.Error(w, "Erro ao desativar a conta antiga: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Inserir nova conta
+		newID := uuid.NewString()
+		_, err = db.Exec(`
+			INSERT INTO core.saque_conta (
+				id, id_user, banco, banco_nome, conta, agencia, digito, cpf, telefone, pix, active, dell, date_create
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, false, NOW()
+			)
+		`, newID, idUser, req.Banco, req.BancoNome, req.Conta, req.Agencia, req.Digito, req.CPF, req.Telefone, req.Pix)
+		if err != nil {
+			http.Error(w, "Erro ao criar nova conta: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		jsonResponse(w, http.StatusOK, map[string]string{
+			"message": "Conta atualizada com sucesso",
+			"new_id":  newID,
+			"old_id":  req.IDContaOld,
+		})
+	}
+}
+
