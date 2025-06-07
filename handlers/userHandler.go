@@ -337,3 +337,75 @@ func UserBankAccountUpdateHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+func UserBankAccountGetHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extrair o token
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
+			return
+		}
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecretKey, nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Token inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Pegar id do token
+		idFromToken, ok := claims["sub"].(string)
+		if !ok || idFromToken == "" {
+			http.Error(w, "ID do usuário inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Pegar id_user da query
+		idFromQuery := r.URL.Query().Get("id_user")
+		if idFromQuery == "" {
+			http.Error(w, "Parâmetro id_user é obrigatório", http.StatusBadRequest)
+			return
+		}
+
+		// Comparar os dois IDs
+		if idFromToken != idFromQuery {
+			http.Error(w, "Usuário não autorizado a acessar esta conta bancária", http.StatusForbidden)
+			return
+		}
+
+		// Buscar a conta ativa
+		var conta struct {
+			ID        string `json:"id"`
+			Banco     string `json:"banco"`
+			BancoNome string `json:"banco_nome"`
+			Conta     string `json:"conta"`
+			Agencia   string `json:"agencia"`
+			Digito    string `json:"digito"`
+			CPF       string `json:"cpf"`
+			Telefone  string `json:"telefone"`
+			Pix       string `json:"pix"`
+		}
+
+		err = db.QueryRow(`
+			SELECT id, banco, banco_nome, conta, agencia, digito, cpf, telefone, COALESCE(pix, '') 
+			FROM core.saque_conta 
+			WHERE id_user = $1 AND active = true AND dell = false
+			LIMIT 1
+		`, idFromToken).Scan(
+			&conta.ID, &conta.Banco, &conta.BancoNome, &conta.Conta,
+			&conta.Agencia, &conta.Digito, &conta.CPF, &conta.Telefone, &conta.Pix,
+		)
+		if err == sql.ErrNoRows {
+			http.Error(w, "Nenhuma conta ativa encontrada para este usuário", http.StatusNotFound)
+			return 
+		} else if err != nil {
+			http.Error(w, "Erro ao buscar os dados: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		jsonResponse(w, http.StatusOK, conta)
+	}
+}
+

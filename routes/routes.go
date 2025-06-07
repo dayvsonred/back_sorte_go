@@ -24,6 +24,9 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	// alterar conta bancaria de recebimento 
 	router.HandleFunc("/users/bankAccount", handlers.UserBankAccountUpdateHandler(db)).Methods("PATCH")
 
+	// Busca conta bancaria de recebimento 
+	router.HandleFunc("/users/bankAccount", handlers.UserBankAccountGetHandler(db)).Methods("GET")
+
 	// Rota para fazer login com usuario email e senha retorna tokemn
 	//router.Handle("/login", middleware.CorsMiddleware(handlers.LoginHandler(db))).Methods("POST")
 	router.HandleFunc("/login", handlers.LoginHandler(db)).Methods("POST")
