@@ -25,6 +25,9 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	// Listar doações por usuário com paginação
 	router.HandleFunc("/donation/list", handlers.DonationListByIDUserHandler(db)).Methods("GET")
 
+	//deleta doações
+	router.HandleFunc("/donation/{id}", handlers.DonationDellHandler(db)).Methods("DELETE")
+
 	// Rota testa token e gerado pelo certificado e valido
 	//router.HandleFunc("/testToken", handlers.TestTokenHandler()).Methods("GET")
 

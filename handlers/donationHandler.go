@@ -10,6 +10,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 )
 
 // Chave secreta para validação do token JWT (mesma usada no login)
@@ -114,7 +115,7 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Padrões para paginação
+		// Paginação com limite máximo de 100
 		pageStr := r.URL.Query().Get("page")
 		limitStr := r.URL.Query().Get("limit")
 
@@ -126,7 +127,7 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 		}
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
 			if l > 100 {
-				limit = 100 // valor máximo permitido
+				limit = 100
 			} else {
 				limit = l
 			}
@@ -134,9 +135,11 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 
 		offset := (page - 1) * limit
 
-		// Consulta principal com paginação
+		// Consulta com os campos extras
 		query := `
-			SELECT d.id, d.name, d.valor, d.date_create, dd.texto, dd.img_caminho, dd.area
+			SELECT 
+				d.id, d.name, d.valor, d.date_create, d.date_start, d.active, d.dell,
+				dd.texto, dd.img_caminho, dd.area
 			FROM core.doacao d
 			JOIN core.doacao_details dd ON d.id = dd.id_doacao
 			WHERE d.id_user = $1
@@ -153,34 +156,35 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 
 		var donations []map[string]interface{}
 		for rows.Next() {
-			var id, name, texto, img, area string
-			var valor float64
-			var dateCreate time.Time
+			var (
+				id, name, texto, img, area string
+				valor                      float64
+				dateCreate, dateStart      time.Time
+				active, dell               bool
+			)
 
-			if err := rows.Scan(&id, &name, &valor, &dateCreate, &texto, &img, &area); err != nil {
+			if err := rows.Scan(&id, &name, &valor, &dateCreate, &dateStart, &active, &dell, &texto, &img, &area); err != nil {
 				http.Error(w, "Erro ao processar dados: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
 
 			donations = append(donations, map[string]interface{}{
-				"id":           id,
-				"name":         name,
-				"valor":        valor,
-				"date_create":  dateCreate,
-				"texto":        texto,
-				"img":          img,
-				"area":         area,
+				"id":          id,
+				"name":        name,
+				"valor":       valor,
+				"date_create": dateCreate,
+				"date_start":  dateStart,
+				"active":      active,
+				"dell":        dell,
+				"texto":       texto,
+				"img":         img,
+				"area":        area,
 			})
 		}
 
-		// Verifica se há mais registros
+		// Verificar total de registros
 		var total int
-		countQuery := `
-			SELECT COUNT(*)
-			FROM core.doacao d
-			WHERE d.id_user = $1
-		`
-		err = db.QueryRow(countQuery, idUser).Scan(&total)
+		err = db.QueryRow(`SELECT COUNT(*) FROM core.doacao WHERE id_user = $1`, idUser).Scan(&total)
 		if err != nil {
 			http.Error(w, "Erro ao contar doações: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -188,7 +192,7 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 
 		hasNext := (offset + limit) < total
 
-		// Resposta
+		// Retornar resposta JSON
 		response := map[string]interface{}{
 			"items":         donations,
 			"page":          page,
@@ -199,5 +203,67 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
+	}
+}
+
+
+func DonationDellHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Obter o ID da doação da URL (ex: /donation/{id})
+		vars := mux.Vars(r)
+		donationID := vars["id"]
+		if donationID == "" {
+			http.Error(w, "ID da doação é obrigatório na URL", http.StatusBadRequest)
+			return
+		}
+
+		// Extrair token JWT do cabeçalho
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecretKey1, nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Token inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Obter o ID do usuário do token
+		userID := claims["sub"]
+		if userID == nil {
+			http.Error(w, "Token sem id_user", http.StatusUnauthorized)
+			return
+		}
+
+		// Verificar se a doação pertence ao usuário
+		var dbUserID string
+		err = db.QueryRow(`SELECT id_user FROM core.doacao WHERE id = $1`, donationID).Scan(&dbUserID)
+		if err != nil {
+			http.Error(w, "Doação não encontrada", http.StatusNotFound)
+			return
+		}
+		if dbUserID != userID {
+			http.Error(w, "Usuário não autorizado a deletar esta doação", http.StatusForbidden)
+			return
+		}
+
+		// Atualizar o campo dell para true
+		_, err = db.Exec(`UPDATE core.doacao SET dell = true WHERE id = $1`, donationID)
+		if err != nil {
+			http.Error(w, "Erro ao deletar doação: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Sucesso
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Doação deletada com sucesso",
+		})
 	}
 }
