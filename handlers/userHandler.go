@@ -292,7 +292,7 @@ func UserBankAccountUpdateHandler(db *sql.DB) http.HandlerFunc {
 		err = db.QueryRow(`
 			SELECT EXISTS (
 				SELECT 1 FROM core.saque_conta 
-				WHERE id = $1 AND id_user = $2 AND active = true AND dell = false
+				WHERE id = $1 AND id_user = $1 AND active = true
 			)
 		`, req.IDContaOld, idUser).Scan(&exists)
 		if err != nil {
