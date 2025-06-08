@@ -206,7 +206,6 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-
 func DonationDellHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Obter o ID da doação da URL (ex: /donation/{id})

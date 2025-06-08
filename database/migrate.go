@@ -142,6 +142,14 @@ func RunMigrations(db *sql.DB) error {
 			date_create TIMESTAMP DEFAULT now(),
 			date_update TIMESTAMP DEFAULT now()
 		);`,
+
+		// Tabela com o link agradavel da doação 
+		`CREATE TABLE IF NOT EXISTS core.doacao_link (
+			id UUID PRIMARY KEY,
+			id_doacao UUID NOT NULL,
+			nome_link VARCHAR(255) NOT NULL,
+			FOREIGN KEY (id_doacao) REFERENCES core.doacao (id)
+		)`,
 	}
 
 	for _, query := range queries {
