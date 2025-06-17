@@ -40,11 +40,16 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	//deleta doações
 	router.HandleFunc("/donation/{id}", handlers.DonationDellHandler(db)).Methods("DELETE")
 
+	//Buscar doação por nome link
+	router.HandleFunc("/donation/link/{nome_link}", handlers.DonationByLinkHandler(db)).Methods("GET")
+
 	// Rota testa token e gerado pelo certificado e valido
 	//router.HandleFunc("/testToken", handlers.TestTokenHandler()).Methods("GET")
 
 	//rota para crair pix teste 
-	router.HandleFunc("/pix/create", handlers.TestPixTokenHandler()).Methods("POST")
+	router.HandleFunc("/pix/create", handlers.CreatePixTokenHandler()).Methods("POST")
+
+	router.HandleFunc("/pix/status/{txid}", handlers.PixChargeStatusHandler()).Methods("GET")
 
 	return router
 }

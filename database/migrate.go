@@ -150,6 +150,40 @@ func RunMigrations(db *sql.DB) error {
 			nome_link VARCHAR(255) NOT NULL,
 			FOREIGN KEY (id_doacao) REFERENCES core.doacao (id)
 		)`,
+
+		`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`,
+
+		`CREATE TABLE pix_qrcode (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			id_doacao UUID NOT NULL,
+			valor NUMERIC(10,2) NOT NULL,
+			cpf VARCHAR(14) NOT NULL,
+			nome VARCHAR(255) NOT NULL,
+			mensagem VARCHAR(255),
+			anonimo BOOLEAN NOT NULL,
+			visivel BOOLEAN NOT NULL DEFAULT FALSE,
+			data_criacao TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now()
+		)`,
+
+
+		`CREATE TABLE pix_qrcode_status (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			id_pix_qrcode UUID NOT NULL REFERENCES pix_qrcode(id) ON DELETE CASCADE,
+			data_criacao TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+			expiracao INTEGER NOT NULL,
+			tipo_pagamento VARCHAR(255),
+			loc_id INTEGER,
+			loc_tipo_cob VARCHAR(50),
+			loc_criacao TIMESTAMP WITHOUT TIME ZONE,
+			location TEXT,
+			pix_copia_e_cola TEXT,
+			chave VARCHAR(255),
+			id_pix VARCHAR(255),
+			status VARCHAR(50),
+			buscar BOOLEAN NOT NULL DEFAULT FALSE,
+			finalizado BOOLEAN NOT NULL DEFAULT FALSE,
+			data_pago TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL
+		)`,
 	}
 
 	for _, query := range queries {

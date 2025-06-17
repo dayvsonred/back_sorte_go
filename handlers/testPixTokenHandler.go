@@ -5,22 +5,38 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/efipay/sdk-go-apis-efi/src/efipay/pix"
+	"github.com/gorilla/mux"
 )
 
 // PixChargeRequest define a estrutura do JSON recebido na requisição
 type PixChargeRequest struct {
-	TxID   string  `json:"txid"`
-	Valor  string  `json:"valor"`
-	CNPJ   string  `json:"cnpj"`
-	Nome   string  `json:"nome"`
-	Chave  string  `json:"chave"`
+	Valor    string `json:"valor"`
+	CNPJ     string `json:"cnpj"`
+	Nome     string `json:"nome"`
+	Chave    string `json:"chave"`
 	Mensagem string `json:"mensagem"`
+	Anonimo	 bool  `json:"anonimo"`
+	IdDoacao string `json:"id"`
+}
+
+
+// parseTime faz parse de string ISO para time.Time
+func parseTime(v interface{}) time.Time {
+	if v == nil {
+		return time.Now()
+	}
+	t, err := time.Parse(time.RFC3339, v.(string))
+	if err != nil {
+		return time.Now()
+	}
+	return t
 }
 
 // TestPixTokenHandler cria uma cobrança PIX ao receber uma requisição HTTP
-func TestPixTokenHandler() http.HandlerFunc {
+func CreatePixTokenHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Verifica se o método é POST
 		if r.Method != http.MethodPost {
@@ -35,16 +51,6 @@ func TestPixTokenHandler() http.HandlerFunc {
 			http.Error(w, "Erro ao decodificar JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		
-		// GetCredentials retorna as credenciais carregadas das variáveis de ambiente
-		// var Credentials = map[string]interface{}{
-		//	"client_id":     config.Getclient_id(),
-		//	"client_secret": os.Getenv("CLIENT_SECRET"),
-		//	"sandbox":       strconv.ParseBool(os.Getenv("SANDBOX")), // Converte string para bool
-		//	"timeout":       os.Getenv("TIMEOUT"),
-		//	"CA":            os.Getenv("CA_PEM"),
-		//	"Key":           os.Getenv("KEY_PEM"),
-		// }
 
 		// Obtém as credenciais do config.go
 		//credentials := Credentials
@@ -58,7 +64,7 @@ func TestPixTokenHandler() http.HandlerFunc {
 				"expiracao": 3600,
 			},
 			"devedor": map[string]interface{}{
-				"cnpj": req.CNPJ,
+				"cpf":  req.CNPJ,
 				"nome": req.Nome,
 			},
 			"valor": map[string]interface{}{
@@ -66,16 +72,11 @@ func TestPixTokenHandler() http.HandlerFunc {
 			},
 			"chave":              req.Chave,
 			"solicitacaoPagador": req.Mensagem,
-			"infoAdicionais": []map[string]interface{}{
-				{
-					"nome":  "Campo 1",
-					"valor": "Informação Adicional1 do PSP-Recebedor",
-				},
-			},
 		}
 
 		// Chama a API para criar a cobrança PIX
-		res, err := efi.CreateCharge(req.TxID, body)
+		//res, err := efi.CreateCharge(req.TxID, body)
+		res, err := efi.CreateImmediateCharge(body)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Erro ao criar cobrança PIX: %v", err), http.StatusInternalServerError)
 			return
@@ -90,5 +91,34 @@ func TestPixTokenHandler() http.HandlerFunc {
 		/*if err := json.NewEncoder(w).Encode(res); err != nil {
 			http.Error(w, fmt.Sprintf("Erro ao codificar JSON: %v", err), http.StatusInternalServerError)
 		}*/
+	}
+}
+
+func PixChargeStatusHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		txid := vars["txid"]
+		if txid == "" {
+			http.Error(w, "txid é obrigatório", http.StatusBadRequest)
+			return
+		}
+
+		// Obtém as credenciais do config.go
+		//credentials := Credentials
+		credentials := config.GetCredentials()
+		fmt.Printf("Credentials: %+v\n", credentials)
+		efi := pix.NewEfiPay(credentials)
+
+		//efi := pix.NewEfiPay(config.GetCredentials())
+
+		// Consulta o status da cobrança PIX
+		res, err := efi.DetailCharge(txid)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Erro ao consultar status do PIX: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(res)) // Retorna a resposta original da API
 	}
 }
