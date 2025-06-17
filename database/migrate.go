@@ -153,7 +153,7 @@ func RunMigrations(db *sql.DB) error {
 
 		`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`,
 
-		`CREATE TABLE pix_qrcode (
+		`CREATE TABLE IF NOT EXISTS core.pix_qrcode (
 			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 			id_doacao UUID NOT NULL,
 			valor NUMERIC(10,2) NOT NULL,
@@ -166,9 +166,9 @@ func RunMigrations(db *sql.DB) error {
 		)`,
 
 
-		`CREATE TABLE pix_qrcode_status (
+		`CREATE TABLE IF NOT EXISTS core.pix_qrcode_status (
 			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-			id_pix_qrcode UUID NOT NULL REFERENCES pix_qrcode(id) ON DELETE CASCADE,
+			id_pix_qrcode UUID NOT NULL REFERENCES core.pix_qrcode(id) ON DELETE CASCADE,
 			data_criacao TIMESTAMP WITHOUT TIME ZONE NOT NULL,
 			expiracao INTEGER NOT NULL,
 			tipo_pagamento VARCHAR(255),

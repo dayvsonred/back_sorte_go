@@ -47,7 +47,7 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	//router.HandleFunc("/testToken", handlers.TestTokenHandler()).Methods("GET")
 
 	//rota para crair pix teste 
-	router.HandleFunc("/pix/create", handlers.CreatePixTokenHandler()).Methods("POST")
+	router.HandleFunc("/pix/create", handlers.CreatePixTokenHandler(db)).Methods("POST")
 
 	router.HandleFunc("/pix/status/{txid}", handlers.PixChargeStatusHandler()).Methods("GET")
 
