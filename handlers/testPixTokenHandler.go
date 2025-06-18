@@ -16,14 +16,13 @@ import (
 // PixChargeRequest define a estrutura do JSON recebido na requisição
 type PixChargeRequest struct {
 	Valor    string `json:"valor"`
-	CNPJ     string `json:"cnpj"`
+	CPF     string `json:"cpf"`
 	Nome     string `json:"nome"`
 	Chave    string `json:"chave"`
 	Mensagem string `json:"mensagem"`
 	Anonimo	 bool  `json:"anonimo"`
 	IdDoacao string `json:"id"`
 }
-
 
 // parseTime faz parse de string ISO para time.Time
 func parseTimeISO(v interface{}) time.Time {
@@ -56,7 +55,7 @@ func CreatePixTokenHandler(db *sql.DB) http.HandlerFunc {
 		body := map[string]interface{}{
 			"calendario": map[string]interface{}{"expiracao": 3600},
 			"devedor": map[string]interface{}{
-				"cpf":  req.CNPJ,
+				"cpf":  req.CPF,
 				"nome": req.Nome,
 			},
 			"valor":              map[string]interface{}{"original": req.Valor},
@@ -103,7 +102,7 @@ func CreatePixTokenHandler(db *sql.DB) http.HandlerFunc {
 			idPixQRCode,
 			req.IdDoacao,
 			req.Valor,
-			req.CNPJ,
+			req.CPF,
 			req.Nome,
 			req.Mensagem,
 			req.Anonimo,
@@ -156,6 +155,14 @@ func CreatePixTokenHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Iniciar verificação de status em background (não bloqueia)
+		go func(txid string) {
+			err := IniciarMonitoramentoStatusPagamento(db, txid)
+			if err != nil {
+				fmt.Println("Erro ao iniciar monitoramento do pagamento:", err)
+			}
+		}(txid)
+
 		// Retorno da API
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(resStr))
@@ -188,5 +195,139 @@ func PixChargeStatusHandler() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(res)) // Retorna a resposta original da API
+	}
+}
+
+//executa monitoramente de pagamento apos chamada da função por param
+func IniciarMonitoramentoStatusPagamento(db *sql.DB, txid string) error {
+	checkInterval := []time.Duration{30 * time.Second, 1 * time.Minute}
+	attempts := []int{10, 21}
+
+	for phase := 0; phase < 2; phase++ {
+		for i := 0; i < attempts[phase]; i++ {
+			fmt.Printf("Verificando status para txid: %s (tentativa %d/%d)\n", txid, i+1, attempts[phase])
+
+			status, err := consultarStatusPix(txid)
+			if err != nil {
+				fmt.Println("Erro ao consultar status PIX:", err)
+				return err
+			}
+
+			if status == "CONCLUIDA" {
+				atualizarStatusPagamento(db, txid)
+				return nil
+			}
+
+			time.Sleep(checkInterval[phase])
+		}
+	}
+
+	fmt.Println("Verificações encerradas sem pagamento concluído para:", txid)
+	marcarPagamentoVencido(db, txid)
+	return nil
+}
+
+// executa monitoramente de pagamento apos chamada por POST
+func MonitorarStatusPagamentoHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		txid := vars["txid"]
+		if txid == "" {
+			http.Error(w, "txid é obrigatório", http.StatusBadRequest)
+			return
+		}
+
+		go func() {
+			checkInterval := []time.Duration{30 * time.Second, 1 * time.Minute}
+			attempts := []int{10, 21}
+
+			for phase := 0; phase < 2; phase++ {
+				for i := 0; i < attempts[phase]; i++ {
+					fmt.Printf("Verificando status para txid: %s (tentativa %d/%d)\n", txid, i+1, attempts[phase])
+
+					status, err := consultarStatusPix(txid)
+					if err != nil {
+						fmt.Println("Erro ao consultar status PIX:", err)
+						break
+					}
+
+					if status == "CONCLUIDA" {
+						// Atualizar banco de dados
+						atualizarStatusPagamento(db, txid)
+						return
+					}
+
+					time.Sleep(checkInterval[phase])
+				}
+			}
+			fmt.Println("Verificações encerradas sem pagamento concluído para:", txid)
+			marcarPagamentoVencido(db, txid) // ✅ Adicionando chamada para marcar como VENCIDO
+		}()
+
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte("Monitoramento iniciado"))
+	}
+}
+
+func consultarStatusPix(txid string) (string, error) {
+	//fmt.Println("Verifica status pix para id:", txid)
+	efi := pix.NewEfiPay(config.GetCredentials())
+	res, err := efi.DetailCharge(txid)
+	if err != nil {
+		return "", err
+	}
+
+	var resMap map[string]interface{}
+	if err := json.Unmarshal([]byte(res), &resMap); err != nil {
+		return "", err
+	}
+
+	status, ok := resMap["status"].(string)
+	if !ok {
+		return "", fmt.Errorf("status não encontrado na resposta")
+	}
+
+	return status, nil
+}
+
+func atualizarStatusPagamento(db *sql.DB, txid string) {
+	now := time.Now()
+	fmt.Println("Atializa pagamento confirmado pix para id:", txid)
+	// Atualiza core.pix_qrcode_status
+	_, err := db.Exec(`
+		UPDATE core.pix_qrcode_status
+		SET status = 'CONCLUIDA', buscar = false, finalizado = true, data_pago = $1
+		WHERE id_pix = $2
+	`, now, txid)
+	if err != nil {
+		fmt.Println("Erro ao atualizar pix_qrcode_status:", err)
+		return
+	}
+
+	// Atualiza core.pix_qrcode (assumindo que temos o id_pix_qrcode vinculado ao txid)
+	_, err = db.Exec(`
+		UPDATE core.pix_qrcode
+		SET visivel = true
+		WHERE id = (
+			SELECT id_pix_qrcode
+			FROM core.pix_qrcode_status
+			WHERE id_pix = $1
+			LIMIT 1
+		)
+	`, txid)
+	if err != nil {
+		fmt.Println("Erro ao atualizar pix_qrcode:", err)
+	}
+}
+
+func marcarPagamentoVencido(db *sql.DB, txid string) {
+	fmt.Println("Atializa Vencido pix para id:", txid)
+	_, err := db.Exec(`
+		UPDATE core.pix_qrcode_status
+		SET status = 'VENCIDO', buscar = false
+		WHERE id_pix = $1
+	`, txid)
+	if err != nil {
+		fmt.Println("Erro ao marcar cobrança como vencida:", err)
 	}
 }
