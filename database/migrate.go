@@ -82,7 +82,7 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS core.doacao_details (
 			id UUID PRIMARY KEY,
 			id_doacao UUID REFERENCES core.doacao(id),
-			texto VARCHAR(255),
+			texto TEXT CHECK (length(texto) <= 5500),
 			img_caminho VARCHAR(255),
 			area VARCHAR(255)
 		);`,

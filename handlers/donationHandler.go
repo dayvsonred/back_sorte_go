@@ -395,21 +395,76 @@ func DonationByLinkHandler(db *sql.DB) http.HandlerFunc {
 
 		// Montar resposta
 		response := map[string]interface{}{
-			"id":           doacao.ID,
-			"id_user":      doacao.IDUser,
-			"name":         doacao.Name,
-			"valor":        doacao.Valor,
-			"active":       doacao.Active,
-			"dell":         doacao.Dell,
-			"date_start":   doacao.Start,
-			"date_create":  doacao.Created,
-			"texto":        details.Texto,
-			"img_caminho":  details.Img,
-			"area":         details.Area,
-			"nome_link":    nomeLink,
+			"id":          doacao.ID,
+			"id_user":     doacao.IDUser,
+			"name":        doacao.Name,
+			"valor":       doacao.Valor,
+			"active":      doacao.Active,
+			"dell":        doacao.Dell,
+			"date_start":  doacao.Start,
+			"date_create": doacao.Created,
+			"texto":       details.Texto,
+			"img_caminho": details.Img,
+			"area":        details.Area,
+			"nome_link":   nomeLink,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
+	}
+}
+
+// Estrutura do retorno completo
+type DonationMessageFull struct {
+	ID          string    `json:"id"`
+	Valor       string    `json:"valor"`
+	CPF         string    `json:"cpf"`
+	Nome        string    `json:"nome"`
+	Mensagem    string    `json:"mensagem"`
+	Anonimo     bool      `json:"anonimo"`
+	DataCriacao time.Time `json:"data_criacao"`
+}
+
+// DonationMensagesHandler retorna mensagens visíveis com dados completos
+func DonationMensagesHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idDoacao := r.URL.Query().Get("id")
+		if idDoacao == "" {
+			http.Error(w, "Parâmetro 'id' é obrigatório", http.StatusBadRequest)
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT id, valor, cpf, nome, mensagem, anonimo, data_criacao
+			FROM core.pix_qrcode
+			WHERE id_doacao = $1 AND visivel = TRUE
+			ORDER BY data_criacao DESC
+		`, idDoacao)
+		if err != nil {
+			http.Error(w, "Erro ao buscar mensagens: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		var mensagens []DonationMessageFull
+		for rows.Next() {
+			var msg DonationMessageFull
+			if err := rows.Scan(
+				&msg.ID,
+				&msg.Valor,
+				&msg.CPF,
+				&msg.Nome,
+				&msg.Mensagem,
+				&msg.Anonimo,
+				&msg.DataCriacao,
+			); err != nil {
+				http.Error(w, "Erro ao ler resultado: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			mensagens = append(mensagens, msg)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mensagens)
 	}
 }
