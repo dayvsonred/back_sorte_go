@@ -425,21 +425,40 @@ type DonationMessageFull struct {
 	DataCriacao time.Time `json:"data_criacao"`
 }
 
-// DonationMensagesHandler retorna mensagens visíveis com dados completos
+// DonationMensagesHandler retorna mensagens com paginação
 func DonationMensagesHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Parâmetros de query
 		idDoacao := r.URL.Query().Get("id")
 		if idDoacao == "" {
 			http.Error(w, "Parâmetro 'id' é obrigatório", http.StatusBadRequest)
 			return
 		}
 
+		// Paginação
+		pageStr := r.URL.Query().Get("page")
+		limitStr := r.URL.Query().Get("limit")
+
+		page, err := strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
+			page = 1
+		}
+
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit < 1 || limit > 100 {
+			limit = 10
+		}
+
+		offset := (page - 1) * limit
+
+		// Consulta com paginação
 		rows, err := db.Query(`
 			SELECT id, valor, cpf, nome, mensagem, anonimo, data_criacao
 			FROM core.pix_qrcode
 			WHERE id_doacao = $1 AND visivel = TRUE
 			ORDER BY data_criacao DESC
-		`, idDoacao)
+			LIMIT $2 OFFSET $3
+		`, idDoacao, limit, offset)
 		if err != nil {
 			http.Error(w, "Erro ao buscar mensagens: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -464,7 +483,43 @@ func DonationMensagesHandler(db *sql.DB) http.HandlerFunc {
 			mensagens = append(mensagens, msg)
 		}
 
+		// Resposta JSON
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(mensagens)
+	}
+}
+
+type DonationSummary struct {
+	ValorTotal    string `json:"valor_total"`
+	TotalDoadores int    `json:"total_doadores"`
+}
+
+func DonationSummaryByIDHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		idDoacao := vars["id"]
+		if idDoacao == "" {
+			http.Error(w, "Parâmetro 'id' é obrigatório", http.StatusBadRequest)
+			return
+		}
+
+		var resumo DonationSummary
+
+		query := `
+			SELECT 
+				COALESCE(SUM(valor), 0)::TEXT AS valor_total,
+				COUNT(DISTINCT cpf) AS total_doadores
+			FROM core.pix_qrcode
+			WHERE id_doacao = $1 AND visivel = true
+		`
+
+		err := db.QueryRow(query, idDoacao).Scan(&resumo.ValorTotal, &resumo.TotalDoadores)
+		if err != nil {
+			http.Error(w, "Erro ao buscar resumo da doação: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resumo)
 	}
 }

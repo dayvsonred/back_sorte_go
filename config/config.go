@@ -67,3 +67,24 @@ func GetCredentials() map[string]interface{} {
 		"Key":           os.Getenv("KEY_PEM"),
 	}
 }
+
+
+func GetAwsRegion() string {
+	return os.Getenv("AWS_REGION")
+}
+
+func GetAwsAccessKey() string {
+	return os.Getenv("AWS_ACCESS_KEY_ID")
+}
+
+func GetAwsSecretKey() string {
+	return os.Getenv("AWS_SECRET_ACCESS_KEY")
+}
+
+func GetAwsBucket() string {
+	return os.Getenv("AWS_BUCKET_NAME")
+}
+
+func GetJwtSecret() string {
+	return os.Getenv("JWT_SECRET")
+}

@@ -32,6 +32,7 @@ func RunMigrations(db *sql.DB) error {
 			cep VARCHAR(70),
 			telefone VARCHAR(70),
 			apelido VARCHAR(200),
+			img_perfil VARCHAR(255),
 			date_create TIMESTAMP DEFAULT now(),
 			date_update TIMESTAMP DEFAULT now()
 		);`,

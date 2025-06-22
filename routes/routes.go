@@ -27,6 +27,9 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	// Busca conta bancaria de recebimento 
 	router.HandleFunc("/users/bankAccount", handlers.UserBankAccountGetHandler(db)).Methods("GET")
 
+	//atualiza img do perfil do usuario
+	router.HandleFunc("/users/uploadProfileImage", handlers.UploadUserProfileImageHandler(db)).Methods("POST")
+
 	// Rota para fazer login com usuario email e senha retorna tokemn
 	//router.Handle("/login", middleware.CorsMiddleware(handlers.LoginHandler(db))).Methods("POST")
 	router.HandleFunc("/login", handlers.LoginHandler(db)).Methods("POST")
@@ -55,6 +58,9 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	router.HandleFunc("/pix/status/{txid}", handlers.PixChargeStatusHandler()).Methods("GET")
 	
 	router.HandleFunc("/pix/monitora/{txid}", handlers.MonitorarStatusPagamentoHandler(db)).Methods("POST")
+
+	// valor total da doação e total de doadores 
+	router.HandleFunc("/pix/total/{id}", handlers.DonationSummaryByIDHandler(db)).Methods("GET")
 
 	return router
 }

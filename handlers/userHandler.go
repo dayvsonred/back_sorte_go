@@ -1,14 +1,21 @@
 package handlers
 
 import (
+	"BACK_SORTE_GO/config"
 	"database/sql"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"BACK_SORTE_GO/models"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -406,6 +413,126 @@ func UserBankAccountGetHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		jsonResponse(w, http.StatusOK, conta)
+	}
+}
+
+
+func UploadUserProfileImageHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Validar token JWT
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Token ausente", http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+		// Validar e extrair claims config.GetJwtSecret()
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecretKey, nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Token inválido", http.StatusUnauthorized)
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Erro ao processar claims do token", http.StatusUnauthorized)
+			return
+		}
+
+		idFromToken, ok := claims["sub"].(string)
+		if !ok || idFromToken == "" {
+			http.Error(w, "ID do usuário inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Parse do arquivo enviado
+		err = r.ParseMultipartForm(10 << 20) // 10MB
+		if err != nil {
+			http.Error(w, "Erro ao parsear o formulário: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		file, handler, err := r.FormFile("image")
+		if err != nil {
+			http.Error(w, "Erro ao ler o arquivo: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		// Pega extensão segura
+		ext := strings.ToLower(filepath.Ext(handler.Filename))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+			http.Error(w, "Formato de imagem não suportado", http.StatusBadRequest)
+			return
+		}
+
+		fileName := idFromToken + ext // Nome da imagem no S3
+
+		// Sessão S3
+		sess, err := session.NewSession(&aws.Config{
+			Region: aws.String(config.GetAwsRegion()),
+			Credentials: credentials.NewStaticCredentials(
+				config.GetAwsAccessKey(),
+				config.GetAwsSecretKey(),
+				"",
+			),
+		})
+		if err != nil {
+			http.Error(w, "Erro na sessão AWS: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		uploader := s3manager.NewUploader(sess)
+		result, err := uploader.Upload(&s3manager.UploadInput{
+			Bucket:      aws.String(config.GetAwsBucket()),
+			Key:         aws.String(fileName),
+			Body:        file.(multipart.File),
+			ContentType: aws.String(handler.Header.Get("Content-Type")),
+			//ACL:         aws.String("public-read"),
+		})
+		if err != nil {
+			http.Error(w, "Erro ao fazer upload no S3: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Atualiza ou insere em core.user_details
+		var exists bool
+		err = db.QueryRow(`SELECT EXISTS (SELECT 1 FROM core.user_details WHERE id_user = $1)`, idFromToken).Scan(&exists)
+		if err != nil {
+			http.Error(w, "Erro ao verificar existência de user_details: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Gerar UUID da img
+		imgID := uuid.NewString()
+
+		if exists {
+			_, err = db.Exec(`
+				UPDATE core.user_details 
+				SET img_perfil = $1, date_update = now()
+				WHERE id_user = $2
+			`, fileName, idFromToken)
+		} else {
+			_, err = db.Exec(`
+				INSERT INTO core.user_details (id, id_user, img_perfil)
+				VALUES ($1, $2, $3)
+			`,imgID, idFromToken, fileName)
+		}
+		if err != nil {
+			http.Error(w, "Erro ao salvar imagem no banco: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Retorno final
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		resp := map[string]string{"url": result.Location}
+		json.NewEncoder(w).Encode(resp)
 	}
 }
 
