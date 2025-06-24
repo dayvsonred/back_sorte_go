@@ -29,6 +29,9 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 
 	//atualiza img do perfil do usuario
 	router.HandleFunc("/users/uploadProfileImage", handlers.UploadUserProfileImageHandler(db)).Methods("POST")
+	
+	//get img do perfil do usuario
+	router.HandleFunc("/users/ProfileImage/{id}", handlers.UserProfileImageHandler(db)).Methods("GET")
 
 	// Rota para fazer login com usuario email e senha retorna tokemn
 	//router.Handle("/login", middleware.CorsMiddleware(handlers.LoginHandler(db))).Methods("POST")

@@ -4,6 +4,7 @@ import (
 	"BACK_SORTE_GO/config"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -533,6 +535,54 @@ func UploadUserProfileImageHandler(db *sql.DB) http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 		resp := map[string]string{"url": result.Location}
 		json.NewEncoder(w).Encode(resp)
+	}
+}
+
+
+func UserProfileImageHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		userID := vars["id"]
+
+		if userID == "" {
+			http.Error(w, "ID do usuário é obrigatório", http.StatusBadRequest)
+			return
+		}
+
+		var imgPerfil sql.NullString
+		err := db.QueryRow(`
+			SELECT img_perfil
+			FROM core.user_details
+			WHERE id_user = $1
+		`, userID).Scan(&imgPerfil)
+
+		if err != nil {
+			if err == sql.ErrNoRows {
+				http.Error(w, "Usuário não encontrado ou sem imagem", http.StatusNotFound)
+				return
+			}
+			http.Error(w, "Erro ao buscar imagem do perfil: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if !imgPerfil.Valid || imgPerfil.String == "" {
+			http.Error(w, "Imagem de perfil não cadastrada", http.StatusNotFound)
+			return
+		}
+
+		// Monta a URL pública do S3 com base nos dados da configuração
+		region := config.GetAwsRegion()
+		bucket := config.GetAwsBucket()  // ex: doacao-users-prefil-v1-2025
+		if region == "" || bucket == "" {
+			http.Error(w, "Configuração do bucket não encontrada", http.StatusInternalServerError)
+			return
+		}
+
+		url := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", bucket, region, imgPerfil.String)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(fmt.Sprintf(`{"image_url": "%s"}`, url)))
 	}
 }
 
