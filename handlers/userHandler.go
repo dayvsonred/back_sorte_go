@@ -408,7 +408,7 @@ func UserBankAccountGetHandler(db *sql.DB) http.HandlerFunc {
 		)
 		if err == sql.ErrNoRows {
 			http.Error(w, "Nenhuma conta ativa encontrada para este usuário", http.StatusNotFound)
-			return 
+			return
 		} else if err != nil {
 			http.Error(w, "Erro ao buscar os dados: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -417,7 +417,6 @@ func UserBankAccountGetHandler(db *sql.DB) http.HandlerFunc {
 		jsonResponse(w, http.StatusOK, conta)
 	}
 }
-
 
 func UploadUserProfileImageHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -523,7 +522,7 @@ func UploadUserProfileImageHandler(db *sql.DB) http.HandlerFunc {
 			_, err = db.Exec(`
 				INSERT INTO core.user_details (id, id_user, img_perfil)
 				VALUES ($1, $2, $3)
-			`,imgID, idFromToken, fileName)
+			`, imgID, idFromToken, fileName)
 		}
 		if err != nil {
 			http.Error(w, "Erro ao salvar imagem no banco: "+err.Error(), http.StatusInternalServerError)
@@ -537,7 +536,6 @@ func UploadUserProfileImageHandler(db *sql.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(resp)
 	}
 }
-
 
 func UserProfileImageHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -572,7 +570,7 @@ func UserProfileImageHandler(db *sql.DB) http.HandlerFunc {
 
 		// Monta a URL pública do S3 com base nos dados da configuração
 		region := config.GetAwsRegion()
-		bucket := config.GetAwsBucket()  // ex: doacao-users-prefil-v1-2025
+		bucket := config.GetAwsBucket() // ex: doacao-users-prefil-v1-2025
 		if region == "" || bucket == "" {
 			http.Error(w, "Configuração do bucket não encontrada", http.StatusInternalServerError)
 			return
@@ -585,4 +583,3 @@ func UserProfileImageHandler(db *sql.DB) http.HandlerFunc {
 		w.Write([]byte(fmt.Sprintf(`{"image_url": "%s"}`, url)))
 	}
 }
-

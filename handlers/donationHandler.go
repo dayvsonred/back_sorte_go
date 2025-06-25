@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"BACK_SORTE_GO/config"
+	"BACK_SORTE_GO/utils"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
@@ -33,7 +35,7 @@ type DonationRequest struct {
 }
 
 // DonationHandler lida com o cadastro de doações
-func DonationHandler(db *sql.DB) http.HandlerFunc {
+func DonationHandler1(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
@@ -521,5 +523,122 @@ func DonationSummaryByIDHandler(db *sql.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resumo)
+	}
+}
+
+
+func DonationHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Valida token
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
+			return
+		}
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims := jwt.MapClaims{}
+		_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecretKey1, nil
+		})
+		if err != nil {
+			http.Error(w, "Token inválido", http.StatusUnauthorized)
+			return
+		}
+
+		idUser, ok := claims["sub"].(string)
+		if !ok || idUser == "" {
+			http.Error(w, "ID do usuário inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Parse multipart form
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			http.Error(w, "Erro ao ler formulário", http.StatusBadRequest)
+			return
+		}
+
+		// Ler campos
+		name := r.FormValue("name")
+		valorStr := r.FormValue("valor")
+		texto := r.FormValue("texto")
+		area := r.FormValue("area")
+
+		if idUser == "" || name == "" || valorStr == "" || texto == "" || area == "" {
+			http.Error(w, "Todos os campos são obrigatórios", http.StatusBadRequest)
+			return
+		}
+
+
+		valor, err := strconv.ParseFloat(valorStr, 64)
+		if err != nil || valor <= 0 {
+			http.Error(w, "Valor inválido", http.StatusBadRequest)
+			return
+		}
+		if name == "" || texto == "" || area == "" {
+			http.Error(w, "Campos obrigatórios ausentes", http.StatusBadRequest)
+			return
+		}
+
+		// Upload da imagem
+		file, handler, err := r.FormFile("image")
+		if err != nil {
+			http.Error(w, "Imagem obrigatória", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		// Gerar nome do arquivo
+		imgFileName := fmt.Sprintf("%s_%d_%s", idUser, time.Now().Unix(), handler.Filename)
+
+		// Upload para S3
+		imgPath, err := utils.UploadToS3(file, imgFileName, config.GetawsBucketNameImgDoacao())
+		if err != nil {
+			http.Error(w, "Erro ao subir imagem: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Inserções no banco
+		donationID := uuid.NewString()
+		now := time.Now()
+
+		_, err = db.Exec(`
+			INSERT INTO core.doacao (id, id_user, name, valor, active, dell, date_start, date_create)
+			VALUES ($1, $2, $3, $4, true, false, $5, $6)
+		`, donationID, idUser, name, valor, now, now)
+		if err != nil {
+			http.Error(w, "Erro ao salvar doação: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		_, err = db.Exec(`
+			INSERT INTO core.doacao_details (id, id_doacao, texto, img_caminho, area)
+			VALUES ($1, $2, $3, $4, $5)
+		`, uuid.NewString(), donationID, texto, imgPath, area)
+		if err != nil {
+			http.Error(w, "Erro ao salvar detalhes: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Gerar nome_link
+		nomeLink, err := generateUniqueLinkName(db, name)
+		if err != nil {
+			http.Error(w, "Erro ao gerar nome_link: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_, err = db.Exec(`
+			INSERT INTO core.doacao_link (id, id_doacao, nome_link)
+			VALUES ($1, $2, $3)
+		`, uuid.NewString(), donationID, nomeLink)
+		if err != nil {
+			http.Error(w, "Erro ao salvar nome_link: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]string{
+			"message":   "Doação criada com sucesso",
+			"id":        donationID,
+			"nome_link": nomeLink,
+			"img":       imgPath,
+		})
 	}
 }

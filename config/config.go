@@ -88,3 +88,7 @@ func GetAwsBucket() string {
 func GetJwtSecret() string {
 	return os.Getenv("JWT_SECRET")
 }
+
+func GetawsBucketNameImgDoacao() string {
+	return os.Getenv("AWS_BUCKET_NAME_IMG_DOACAO")
+}
