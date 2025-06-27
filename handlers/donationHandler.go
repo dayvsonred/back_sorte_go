@@ -34,88 +34,6 @@ type DonationRequest struct {
 	Img    string  `json:"img"`
 }
 
-// DonationHandler lida com o cadastro de doações
-func DonationHandler1(db *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
-			return
-		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		claims := jwt.MapClaims{}
-		_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			return jwtSecretKey1, nil
-		})
-		if err != nil {
-			http.Error(w, "Token inválido", http.StatusUnauthorized)
-			return
-		}
-
-		var donationReq DonationRequest
-		if err := json.NewDecoder(r.Body).Decode(&donationReq); err != nil {
-			http.Error(w, "Erro ao processar JSON", http.StatusBadRequest)
-			return
-		}
-
-		if donationReq.IDUser == "" || donationReq.Name == "" || donationReq.Valor <= 0 ||
-			donationReq.Texto == "" || donationReq.Area == "" || donationReq.Img == "" {
-			http.Error(w, "Todos os campos são obrigatórios", http.StatusBadRequest)
-			return
-		}
-
-		donationID := uuid.NewString()
-		now := time.Now()
-
-		// 1. Inserir doação
-		queryDonation := `
-			INSERT INTO core.doacao (id, id_user, name, valor, active, dell, date_start, date_create)
-			VALUES ($1, $2, $3, $4, true, false, $5, $6)
-		`
-		_, err = db.Exec(queryDonation, donationID, donationReq.IDUser, donationReq.Name, donationReq.Valor, now, now)
-		if err != nil {
-			http.Error(w, "Erro ao salvar a doação: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 2. Inserir detalhes
-		queryDetails := `
-			INSERT INTO core.doacao_details (id, id_doacao, texto, img_caminho, area)
-			VALUES ($1, $2, $3, $4, $5)
-		`
-		_, err = db.Exec(queryDetails, uuid.NewString(), donationID, donationReq.Texto, donationReq.Img, donationReq.Area)
-		if err != nil {
-			http.Error(w, "Erro ao salvar os detalhes da doação: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 3. Gerar nome_link único e inserir em doacao_link
-		nomeLink, err := generateUniqueLinkName(db, donationReq.Name)
-		if err != nil {
-			http.Error(w, "Erro ao gerar nome_link: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		queryLink := `
-			INSERT INTO core.doacao_link (id, id_doacao, nome_link)
-			VALUES ($1, $2, $3)
-		`
-		_, err = db.Exec(queryLink, uuid.NewString(), donationID, nomeLink)
-		if err != nil {
-			http.Error(w, "Erro ao salvar nome_link: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Sucesso
-		json.NewEncoder(w).Encode(map[string]string{
-			"message":   "Doação criada com sucesso",
-			"id":        donationID,
-			"nome_link": nomeLink,
-		})
-	}
-}
-
 // Estrutura de resposta de listagem de doações
 type DonationResponse struct {
 	ID        string  `json:"id"`
@@ -153,16 +71,22 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 		}
 		offset := (page - 1) * limit
 
-		// Consulta com JOIN na tabela de link
+		// Consulta com JOINs
 		query := `
 			SELECT 
-				d.id, d.name, d.valor, d.date_create, d.date_start, d.active, d.dell,
+				d.id, d.name, d.valor, d.date_create, d.date_start, d.active, d.dell, d.closed,
 				dd.texto, dd.img_caminho, dd.area,
-				dl.nome_link
+				dl.nome_link,
+
+				dp.valor_disponivel, dp.valor_tranferido, dp.data_tranferido,
+				dp.solicitado, dp.data_solicitado, dp.status,
+				dp.img, dp.pdf, dp.banco, dp.conta, dp.agencia, dp.digito, dp.pix, dp.data_update
+
 			FROM core.doacao d
 			JOIN core.doacao_details dd ON d.id = dd.id_doacao
 			LEFT JOIN core.doacao_link dl ON d.id = dl.id_doacao
-			WHERE d.id_user = $1
+			LEFT JOIN core.doacao_pagamentos dp ON d.id = dp.id_doacao
+			WHERE d.id_user = $1 AND d.dell = false
 			ORDER BY d.date_create DESC
 			LIMIT $2 OFFSET $3
 		`
@@ -180,16 +104,32 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 				id, name, texto, img, area string
 				valor                      float64
 				dateCreate, dateStart      time.Time
-				active, dell               bool
+				active, dell, closed       bool
 				nomeLink                   sql.NullString
+
+				valorDisponivel, valorTransferido sql.NullFloat64
+				dataTransferido, dataSolicitado   sql.NullTime
+				solicitado                        sql.NullBool
+				status, imgComp, pdfComp          sql.NullString
+				banco, conta, agencia, digito     sql.NullString
+				pix, dataUpdate                   sql.NullString
 			)
 
-			if err := rows.Scan(&id, &name, &valor, &dateCreate, &dateStart, &active, &dell, &texto, &img, &area, &nomeLink); err != nil {
+			err := rows.Scan(
+				&id, &name, &valor, &dateCreate, &dateStart, &active, &dell, &closed,
+				&texto, &img, &area,
+				&nomeLink,
+
+				&valorDisponivel, &valorTransferido, &dataTransferido,
+				&solicitado, &dataSolicitado, &status,
+				&imgComp, &pdfComp, &banco, &conta, &agencia, &digito, &pix, &dataUpdate,
+			)
+			if err != nil {
 				http.Error(w, "Erro ao processar dados: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			donations = append(donations, map[string]interface{}{
+			donation := map[string]interface{}{
 				"id":          id,
 				"name":        name,
 				"valor":       valor,
@@ -197,14 +137,37 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 				"date_start":  dateStart,
 				"active":      active,
 				"dell":        dell,
+				"closed":      closed,
 				"texto":       texto,
 				"img":         img,
 				"area":        area,
 				"nome_link":   nomeLink.String,
-			})
+			}
+
+			// Adicionar pagamentos se existirem
+			if valorDisponivel.Valid || valorTransferido.Valid {
+				donation["pagamento"] = map[string]interface{}{
+					"valor_disponivel":   valorDisponivel.Float64,
+					"valor_tranferido":   valorTransferido.Float64,
+					"data_tranferido":    dataTransferido.Time,
+					"solicitado":         solicitado.Bool,
+					"data_solicitado":    dataSolicitado.Time,
+					"status":             status.String,
+					"img":                imgComp.String,
+					"pdf":                pdfComp.String,
+					"banco":              banco.String,
+					"conta":              conta.String,
+					"agencia":            agencia.String,
+					"digito":             digito.String,
+					"pix":                pix.String,
+					"data_update":        dataUpdate.String,
+				}
+			}
+
+			donations = append(donations, donation)
 		}
 
-		// Contar total de doações
+		// Contar total
 		var total int
 		err = db.QueryRow(`SELECT COUNT(*) FROM core.doacao WHERE id_user = $1`, idUser).Scan(&total)
 		if err != nil {
@@ -273,8 +236,8 @@ func DonationDellHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Atualizar o campo dell para true
-		_, err = db.Exec(`UPDATE core.doacao SET dell = true WHERE id = $1`, donationID)
+		// Atualizar o campo dell para true e date_update com a data atual
+		_, err = db.Exec(`UPDATE core.doacao SET dell = true, date_update = NOW() WHERE id = $1`, donationID)
 		if err != nil {
 			http.Error(w, "Erro ao deletar doação: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -363,20 +326,47 @@ func DonationByLinkHandler(db *sql.DB) http.HandlerFunc {
 			Valor   float64 `json:"valor"`
 			Active  bool    `json:"active"`
 			Dell    bool    `json:"dell"`
+			Closed  bool    `json:"closed"`
 			Start   string  `json:"date_start"`
 			Created string  `json:"date_create"`
 		}
 		err = db.QueryRow(`
-			SELECT id, id_user, name, valor, active, dell, date_start, date_create
+			SELECT id, id_user, name, valor, active, dell, closed, date_start, date_create
 			FROM core.doacao
 			WHERE id = $1
 		`, idDoacao).Scan(
-			&doacao.ID, &doacao.IDUser, &doacao.Name, &doacao.Valor, &doacao.Active,
-			&doacao.Dell, &doacao.Start, &doacao.Created,
+			&doacao.ID, &doacao.IDUser, &doacao.Name, &doacao.Valor,
+			&doacao.Active, &doacao.Dell, &doacao.Closed, &doacao.Start, &doacao.Created,
 		)
 		if err != nil {
 			http.Error(w, "Erro ao buscar doação: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+
+		// Validação se doação está fechada
+		if doacao.Closed {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				http.Error(w, "Doação fechada. Acesso não autorizado", http.StatusUnauthorized)
+				return
+			}
+
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			claims := jwt.MapClaims{}
+			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+				return jwtSecretKey1, nil
+			})
+			if err != nil || !token.Valid {
+				http.Error(w, "Token inválido", http.StatusUnauthorized)
+				return
+			}
+
+			// Comparar ID do token com ID do dono da doação
+			idFromToken, ok := claims["sub"].(string)
+			if !ok || idFromToken == "" || idFromToken != doacao.IDUser {
+				http.Error(w, "Você não tem permissão para acessar esta doação fechada", http.StatusForbidden)
+				return
+			}
 		}
 
 		// Buscar detalhes
@@ -403,6 +393,7 @@ func DonationByLinkHandler(db *sql.DB) http.HandlerFunc {
 			"valor":       doacao.Valor,
 			"active":      doacao.Active,
 			"dell":        doacao.Dell,
+			"closed":      doacao.Closed,
 			"date_start":  doacao.Start,
 			"date_create": doacao.Created,
 			"texto":       details.Texto,
@@ -526,10 +517,8 @@ func DonationSummaryByIDHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-
 func DonationHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Valida token
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
@@ -551,13 +540,11 @@ func DonationHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Parse multipart form
 		if err := r.ParseMultipartForm(10 << 20); err != nil {
 			http.Error(w, "Erro ao ler formulário", http.StatusBadRequest)
 			return
 		}
 
-		// Ler campos
 		name := r.FormValue("name")
 		valorStr := r.FormValue("valor")
 		texto := r.FormValue("texto")
@@ -568,18 +555,12 @@ func DonationHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-
 		valor, err := strconv.ParseFloat(valorStr, 64)
 		if err != nil || valor <= 0 {
 			http.Error(w, "Valor inválido", http.StatusBadRequest)
 			return
 		}
-		if name == "" || texto == "" || area == "" {
-			http.Error(w, "Campos obrigatórios ausentes", http.StatusBadRequest)
-			return
-		}
 
-		// Upload da imagem
 		file, handler, err := r.FormFile("image")
 		if err != nil {
 			http.Error(w, "Imagem obrigatória", http.StatusBadRequest)
@@ -587,30 +568,35 @@ func DonationHandler(db *sql.DB) http.HandlerFunc {
 		}
 		defer file.Close()
 
-		// Gerar nome do arquivo
 		imgFileName := fmt.Sprintf("%s_%d_%s", idUser, time.Now().Unix(), handler.Filename)
-
-		// Upload para S3
 		imgPath, err := utils.UploadToS3(file, imgFileName, config.GetawsBucketNameImgDoacao())
 		if err != nil {
 			http.Error(w, "Erro ao subir imagem: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Inserções no banco
 		donationID := uuid.NewString()
 		now := time.Now()
 
-		_, err = db.Exec(`
-			INSERT INTO core.doacao (id, id_user, name, valor, active, dell, date_start, date_create)
-			VALUES ($1, $2, $3, $4, true, false, $5, $6)
+		// Transação
+		tx, err := db.Begin()
+		if err != nil {
+			http.Error(w, "Erro ao iniciar transação: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer tx.Rollback()
+
+		// Inserir doação
+		_, err = tx.Exec(`
+			INSERT INTO core.doacao (id, id_user, name, valor, active, dell, closed, date_start, date_create)
+			VALUES ($1, $2, $3, $4, true, false, false, $5, $6)
 		`, donationID, idUser, name, valor, now, now)
 		if err != nil {
 			http.Error(w, "Erro ao salvar doação: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		_, err = db.Exec(`
+		_, err = tx.Exec(`
 			INSERT INTO core.doacao_details (id, id_doacao, texto, img_caminho, area)
 			VALUES ($1, $2, $3, $4, $5)
 		`, uuid.NewString(), donationID, texto, imgPath, area)
@@ -619,13 +605,12 @@ func DonationHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Gerar nome_link
 		nomeLink, err := generateUniqueLinkName(db, name)
 		if err != nil {
 			http.Error(w, "Erro ao gerar nome_link: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_, err = db.Exec(`
+		_, err = tx.Exec(`
 			INSERT INTO core.doacao_link (id, id_doacao, nome_link)
 			VALUES ($1, $2, $3)
 		`, uuid.NewString(), donationID, nomeLink)
@@ -634,6 +619,24 @@ func DonationHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Inserir em doacao_pagamentos
+		_, err = tx.Exec(`
+			INSERT INTO core.doacao_pagamentos (id, id_doacao, valor_disponivel, valor_tranferido, solicitado, status, data_update)
+			VALUES ($1, $2, 0, 0, NULL, 'START', $3)
+		`, uuid.New(), donationID, now)
+		if err != nil {
+			http.Error(w, "Erro ao salvar dados iniciais de pagamento: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Commit
+		if err := tx.Commit(); err != nil {
+			http.Error(w, "Erro ao finalizar transação: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Sucesso
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"message":   "Doação criada com sucesso",
 			"id":        donationID,

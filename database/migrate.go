@@ -74,6 +74,7 @@ func RunMigrations(db *sql.DB) error {
 			valor DOUBLE PRECISION NOT NULL,
 			active BOOLEAN DEFAULT true,
 			dell BOOLEAN DEFAULT false,
+			closed BOOLEAN DEFAULT false,
 			date_start TIMESTAMP,
 			date_create TIMESTAMP DEFAULT now(),
 			date_update TIMESTAMP DEFAULT now()
@@ -102,15 +103,23 @@ func RunMigrations(db *sql.DB) error {
 		);`,
 
 		// Tabela doacao_pagametos
-		`CREATE TABLE IF NOT EXISTS core.doacao_pagametos (
-			id UUID PRIMARY KEY,
-			indetificador VARCHAR NOT NULL,
-			id_doacao UUID REFERENCES core.doacao(id),
-			id_doacao_qrcode UUID REFERENCES core.doacao_qrcode(id),
-			texto VARCHAR,
-			valor DOUBLE PRECISION NOT NULL,
-			date_create TIMESTAMP DEFAULT now(),
-			date_update TIMESTAMP DEFAULT now()
+		`CREATE TABLE IF NOT EXISTS core.doacao_pagamentos (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			id_doacao UUID NOT NULL REFERENCES core.doacao(id) ON DELETE CASCADE,
+			valor_disponivel NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+			valor_tranferido NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+			data_tranferido TIMESTAMP,
+			solicitado BOOLEAN NOT NULL DEFAULT false,
+			data_solicitado TIMESTAMP,
+			status VARCHAR(255),
+			img VARCHAR(255),
+			pdf VARCHAR(255),
+			banco VARCHAR(255),
+			conta VARCHAR(255),
+			agencia VARCHAR(255),
+			digito VARCHAR(255),
+			pix VARCHAR(255),
+			data_update TIMESTAMP DEFAULT now()
 		);`,
 
 		// Tabela saque_conta
