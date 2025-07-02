@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"BACK_SORTE_GO/config"
+	"BACK_SORTE_GO/utils"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -11,8 +13,6 @@ import (
 	"strings"
 	"time"
 	"unicode"
-	"BACK_SORTE_GO/config"
-	"BACK_SORTE_GO/utils"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
@@ -147,20 +147,20 @@ func DonationListByIDUserHandler(db *sql.DB) http.HandlerFunc {
 			// Adicionar pagamentos se existirem
 			if valorDisponivel.Valid || valorTransferido.Valid {
 				donation["pagamento"] = map[string]interface{}{
-					"valor_disponivel":   valorDisponivel.Float64,
-					"valor_tranferido":   valorTransferido.Float64,
-					"data_tranferido":    dataTransferido.Time,
-					"solicitado":         solicitado.Bool,
-					"data_solicitado":    dataSolicitado.Time,
-					"status":             status.String,
-					"img":                imgComp.String,
-					"pdf":                pdfComp.String,
-					"banco":              banco.String,
-					"conta":              conta.String,
-					"agencia":            agencia.String,
-					"digito":             digito.String,
-					"pix":                pix.String,
-					"data_update":        dataUpdate.String,
+					"valor_disponivel": valorDisponivel.Float64,
+					"valor_tranferido": valorTransferido.Float64,
+					"data_tranferido":  dataTransferido.Time,
+					"solicitado":       solicitado.Bool,
+					"data_solicitado":  dataSolicitado.Time,
+					"status":           status.String,
+					"img":              imgComp.String,
+					"pdf":              pdfComp.String,
+					"banco":            banco.String,
+					"conta":            conta.String,
+					"agencia":          agencia.String,
+					"digito":           digito.String,
+					"pix":              pix.String,
+					"data_update":      dataUpdate.String,
 				}
 			}
 
@@ -642,6 +642,174 @@ func DonationHandler(db *sql.DB) http.HandlerFunc {
 			"id":        donationID,
 			"nome_link": nomeLink,
 			"img":       imgPath,
+		})
+	}
+}
+
+func DonationClosedHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Verifica se foi enviado token
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
+			return
+		}
+
+		// Extrai o token
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecretKey1, nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Token inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Pega o ID do usuário do token
+		idUserToken, ok := claims["sub"].(string)
+		if !ok || idUserToken == "" {
+			http.Error(w, "ID do usuário inválido no token", http.StatusUnauthorized)
+			return
+		}
+
+		// Pega o ID da doação na URL
+		vars := mux.Vars(r)
+		donationID := vars["id"]
+		if donationID == "" {
+			http.Error(w, "ID da doação é obrigatório", http.StatusBadRequest)
+			return
+		}
+
+		// Verifica se a doação pertence ao usuário do token
+		var idUserFromDB string
+		err = db.QueryRow("SELECT id_user FROM core.doacao WHERE id = $1", donationID).Scan(&idUserFromDB)
+		if err == sql.ErrNoRows {
+			http.Error(w, "Doação não encontrada", http.StatusNotFound)
+			return
+		} else if err != nil {
+			http.Error(w, "Erro ao verificar doação: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if idUserFromDB != idUserToken {
+			http.Error(w, "Você não tem permissão para encerrar esta doação", http.StatusForbidden)
+			return
+		}
+
+		// Atualiza a doação como encerrada
+		_, err = db.Exec(`
+			UPDATE core.doacao 
+			SET active = false, closed = true, date_update = NOW()
+			WHERE id = $1 AND dell = false
+		`, donationID)
+		if err != nil {
+			http.Error(w, "Erro ao encerrar doação: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Sucesso
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Doação encerrada com sucesso",
+		})
+	}
+}
+
+func DonationRescueHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Verifica token JWT
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims := jwt.MapClaims{}
+		_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecretKey1, nil
+		})
+		if err != nil {
+			http.Error(w, "Token inválido", http.StatusUnauthorized)
+			return
+		}
+
+		idUser, ok := claims["sub"].(string)
+		if !ok || idUser == "" {
+			http.Error(w, "ID do usuário inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Pega ID da doação
+		vars := mux.Vars(r)
+		idDoacao := vars["id"]
+		if idDoacao == "" {
+			http.Error(w, "ID da doação é obrigatório", http.StatusBadRequest)
+			return
+		}
+
+		// Verifica se a doação pertence ao usuário
+		var donoDoacao string
+		err = db.QueryRow("SELECT id_user FROM core.doacao WHERE id = $1", idDoacao).Scan(&donoDoacao)
+		if err == sql.ErrNoRows {
+			http.Error(w, "Doação não encontrada", http.StatusNotFound)
+			return
+		} else if err != nil {
+			http.Error(w, "Erro ao verificar doação: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if donoDoacao != idUser {
+			http.Error(w, "Você não tem permissão para resgatar essa doação", http.StatusForbidden)
+			return
+		}
+
+		// Soma dos valores da doação com status CONCLUIDA, buscar=false, finalizado=true e visivel=true
+		var totalValor float64
+		err = db.QueryRow(`
+			SELECT COALESCE(SUM(pq.valor), 0)
+			FROM core.pix_qrcode pq
+			JOIN core.pix_qrcode_status pqs ON pqs.id_pix_qrcode = pq.id
+			WHERE pq.id_doacao = $1
+			AND pqs.status = 'CONCLUIDA'
+			AND pqs.buscar = false
+			AND pqs.finalizado = true
+		`, idDoacao).Scan(&totalValor)
+		if err != nil {
+			http.Error(w, "Erro ao calcular total recebido: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if totalValor <= 0 {
+			http.Error(w, "Nenhum valor disponível para resgate", http.StatusBadRequest)
+			return
+		}
+
+		// Aplica 10% de taxa
+		valorDisponivel := totalValor * 0.90
+		dataSolicitado := time.Now()
+
+		// Atualiza doacao_pagamentos
+		_, err = db.Exec(`
+			UPDATE core.doacao_pagamentos
+			SET valor_disponivel = $1,
+				data_solicitado = $2,
+				status = 'PROCESS',
+				solicitado = true,
+				data_update = NOW()
+			WHERE id_doacao = $3
+		`, valorDisponivel, dataSolicitado, idDoacao)
+		if err != nil {
+			http.Error(w, "Erro ao atualizar pagamento: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Retorno
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"message":          "Resgate processado com sucesso",
+			"valor_disponivel": valorDisponivel,
+			"resgate_total":    totalValor,
 		})
 	}
 }

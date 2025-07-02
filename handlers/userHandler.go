@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"BACK_SORTE_GO/models"
+	//"BACK_SORTE_GO/models"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -63,38 +63,51 @@ func CreateUserHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Gerar UUID e data atual
 		userID := uuid.NewString()
 		now := time.Now()
 
-		// Criar o modelo do usuário
-		user := models.User{
-			ID:         userID,
-			Name:       req.Name,
-			Email:      req.Email,
-			Password:   string(hashedPassword),
-			CPF:        req.CPF,
-			Active:     true,
-			Inicial:    false,
-			Dell:       false,
-			DateCreate: now,
-		}
-
-		// Query de inserção
-		query := `
-			INSERT INTO core.user (id, name, email, password, cpf, active, inicial, dell, date_create, date_update)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		`
-		_, err = db.Exec(query, user.ID, user.Name, user.Email, user.Password, user.CPF, user.Active, user.Inicial, user.Dell, user.DateCreate, nil)
+		// Inserir usuário
+		_, err = db.Exec(`
+			INSERT INTO core.user 
+				(id, name, email, password, cpf, active, inicial, dell, date_create, date_update)
+			VALUES 
+				($1, $2, $3, $4, $5, true, false, false, $6, NULL)
+		`, userID, req.Name, req.Email, string(hashedPassword), req.CPF, now)
 		if err != nil {
 			http.Error(w, "Erro ao criar o usuário: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Resposta de sucesso
+		// Inserir em conta_nivel
+		_, err = db.Exec(`
+			INSERT INTO core.conta_nivel (
+				id, id_user, nivel, ativo, status, data_pagamento, tipo_pagamento, data_update
+			) VALUES (
+				$1, $2, 'BASICO', false, 'INATIVO', NULL, 'INATIVO', $3
+			)
+		`, uuid.NewString(), userID, now)
+		if err != nil {
+			http.Error(w, "Erro ao criar conta_nivel: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Inserir em conta_nivel_pagamento
+		_, err = db.Exec(`
+			INSERT INTO core.conta_nivel_pagamento (
+				id, id_user, pago_data, pago, valor, status, codigo, data_create,
+				referente, valido, txid, pg_status, cpf, chave, pixCopiaECola, expiracao
+			) VALUES (
+				$1, $2, NULL, false, 0, 'INATIVO', '111', $3, '01', true, NULL, 'INATIVO', NULL, NULL, NULL, NULL
+			)
+		`, uuid.NewString(), userID, now)
+		if err != nil {
+			http.Error(w, "Erro ao criar conta_nivel_pagamento: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		jsonResponse(w, http.StatusCreated, map[string]string{
 			"message": "Usuário criado com sucesso",
-			"id":      user.ID,
+			"id":      userID,
 		})
 	}
 }

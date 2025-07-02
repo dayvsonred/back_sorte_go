@@ -52,6 +52,12 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	//buscar as mensagens visíveis da doação
 	router.HandleFunc("/donation/mensagem", handlers.DonationMensagesHandler(db)).Methods("GET")
 
+	//encerra envento de doação 
+	router.HandleFunc("/donation/closed/{id}", handlers.DonationClosedHandler(db)).Methods("GET")
+
+	//prepara os valores para serem enviado para o criado da doação e bloquei visualização da doação
+	router.HandleFunc("/donation/rescue/{id}", handlers.DonationRescueHandler(db)).Methods("GET")
+
 	// Rota testa token e gerado pelo certificado e valido
 	//router.HandleFunc("/testToken", handlers.TestTokenHandler()).Methods("GET")
 
@@ -64,6 +70,9 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 
 	// valor total da doação e total de doadores 
 	router.HandleFunc("/pix/total/{id}", handlers.DonationSummaryByIDHandler(db)).Methods("GET")
+
+	// inicializar busca de todo os pagamento com status em andamento não finalizado ainda com prazo de venciamnete ativos pendeentes de verificação 
+	router.HandleFunc("/pix/monitora/all", handlers.MonitorarStatusAllPagamentosHandler(db)).Methods("GET")
 
 	return router
 }

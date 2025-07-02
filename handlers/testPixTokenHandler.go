@@ -213,10 +213,23 @@ func IniciarMonitoramentoStatusPagamento(db *sql.DB, txid string) error {
 				return err
 			}
 
+
+			fmt.Println("MOCK PARA QUE TODOS OS PIX SEJAM VALIDO REMOVER:", status)
+			/**
+			*
+			*  ATEMÇÂO
+			*
+			*  MOCK PARA QUE TODOS OS PIX SEJAM VALIDO REMOVER 
+			*
+			* DESCOMENTE O IF E APAQUE A CHAMADA AUTOMATICA DA FUNÇÂO atualizarStatusPagamento
+			*/
+			/*
 			if status == "CONCLUIDA" {
 				atualizarStatusPagamento(db, txid)
 				return nil
-			}
+			}*/
+			atualizarStatusPagamento(db, txid)
+			return nil
 
 			time.Sleep(checkInterval[phase])
 		}
@@ -251,11 +264,21 @@ func MonitorarStatusPagamentoHandler(db *sql.DB) http.HandlerFunc {
 						break
 					}
 
-					if status == "CONCLUIDA" {
+					fmt.Println("MOCK PARA QUE TODOS OS PIX SEJAM VALIDO REMOVER:", status)
+					/**
+					*
+					*  ATEMÇÂO
+					*
+					*  MOCK PARA QUE TODOS OS PIX SEJAM VALIDO REMOVER 
+					*
+					* DESCOMENTE O IF E APAQUE A CHAMADA AUTOMATICA DA FUNÇÂO atualizarStatusPagamento
+					*/
+					/*if status == "CONCLUIDA" {
 						// Atualizar banco de dados
 						atualizarStatusPagamento(db, txid)
 						return
-					}
+					}*/
+					atualizarStatusPagamento(db, txid)
 
 					time.Sleep(checkInterval[phase])
 				}
@@ -292,8 +315,9 @@ func consultarStatusPix(txid string) (string, error) {
 
 func atualizarStatusPagamento(db *sql.DB, txid string) {
 	now := time.Now()
-	fmt.Println("Atializa pagamento confirmado pix para id:", txid)
-	// Atualiza core.pix_qrcode_status
+	fmt.Println("Atualiza pagamento confirmado PIX para id:", txid)
+
+	// Atualiza status da cobrança
 	_, err := db.Exec(`
 		UPDATE core.pix_qrcode_status
 		SET status = 'CONCLUIDA', buscar = false, finalizado = true, data_pago = $1
@@ -304,19 +328,43 @@ func atualizarStatusPagamento(db *sql.DB, txid string) {
 		return
 	}
 
-	// Atualiza core.pix_qrcode (assumindo que temos o id_pix_qrcode vinculado ao txid)
+	// Recupera id_doacao e valor original do PIX (para cálculo de 90%)
+	var idDoacao string
+	var valorOriginal float64
+	err = db.QueryRow(`
+		SELECT pq.id_doacao, pq.valor
+		FROM core.pix_qrcode pq
+		JOIN core.pix_qrcode_status pqs ON pqs.id_pix_qrcode = pq.id
+		WHERE pqs.id_pix = $1
+		LIMIT 1
+	`, txid).Scan(&idDoacao, &valorOriginal)
+	if err != nil {
+		fmt.Println("Erro ao buscar valor e doação do PIX:", err)
+		return
+	}
+
+	// Aplica taxa de 10%
+	valorLiquido := valorOriginal * 0.90
+
+	// Atualiza campo visível do PIX
 	_, err = db.Exec(`
 		UPDATE core.pix_qrcode
 		SET visivel = true
-		WHERE id = (
-			SELECT id_pix_qrcode
-			FROM core.pix_qrcode_status
-			WHERE id_pix = $1
-			LIMIT 1
-		)
-	`, txid)
+		WHERE id_doacao = $1 AND valor = $2
+	`, idDoacao, valorOriginal)
 	if err != nil {
-		fmt.Println("Erro ao atualizar pix_qrcode:", err)
+		fmt.Println("Erro ao atualizar visibilidade do PIX:", err)
+	}
+
+	// Soma o valor líquido ao campo valor_disponivel em doacao_pagamentos
+	_, err = db.Exec(`
+		UPDATE core.doacao_pagamentos
+		SET valor_disponivel = COALESCE(valor_disponivel, 0) + $1,
+			data_update = $2
+		WHERE id_doacao = $3
+	`, valorLiquido, now, idDoacao)
+	if err != nil {
+		fmt.Println("Erro ao atualizar doacao_pagamentos:", err)
 	}
 }
 
@@ -329,5 +377,56 @@ func marcarPagamentoVencido(db *sql.DB, txid string) {
 	`, txid)
 	if err != nil {
 		fmt.Println("Erro ao marcar cobrança como vencida:", err)
+	}
+}
+
+
+func MonitorarStatusAllPagamentosHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Verifica o header de segurança
+		authKey := r.Header.Get("KEY")
+		if authKey != "MINHAKEY_123" {
+			http.Error(w, "Chave de acesso inválida", http.StatusUnauthorized)
+			return
+		}
+
+		// Consulta os txids que devem ser monitorados
+		rows, err := db.Query(`
+			SELECT id_pix 
+			FROM core.pix_qrcode_status 
+			WHERE status = 'ATIVA' 
+			  AND buscar = true 
+			  AND finalizado = false 
+			  AND data_pago IS NULL
+		`)
+		if err != nil {
+			http.Error(w, "Erro ao buscar cobranças ativas: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		var txids []string
+		for rows.Next() {
+			var txid string
+			if err := rows.Scan(&txid); err == nil {
+				txids = append(txids, txid)
+			}
+		}
+
+		// Iniciar verificação assíncrona para cada cobrança
+		for _, txid := range txids {
+			go func(id string) {
+				if err := IniciarMonitoramentoStatusPagamento(db, id); err != nil {
+					fmt.Printf("Erro ao monitorar txid %s: %v\n", id, err)
+				}
+			}(txid)
+		}
+
+		// Resposta imediata
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"message":         "Monitoramento iniciado",
+			"total_monitorar": len(txids),
+		})
 	}
 }

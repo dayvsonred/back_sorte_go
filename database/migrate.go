@@ -19,6 +19,7 @@ func RunMigrations(db *sql.DB) error {
 			active BOOLEAN DEFAULT true,
 			inicial BOOLEAN DEFAULT false,
 			dell BOOLEAN DEFAULT false,
+			id_tipo_conta UUID,  -- nova coluna
 			date_create TIMESTAMP DEFAULT now(),
 			date_update TIMESTAMP DEFAULT now()
 		);`,
@@ -45,10 +46,9 @@ func RunMigrations(db *sql.DB) error {
 
 		// Inserção da role ROLE_OPERATOR
 		`INSERT INTO core.role (role_name) VALUES ('ROLE_OPERATOR');`,
-		
+
 		// Inserção da role ROLE_ADMIN
 		`INSERT INTO core.role (role_name) VALUES ('ROLE_ADMIN');`,
-		
 
 		// Tabela user_role
 		`CREATE TABLE IF NOT EXISTS core.user_role (
@@ -153,7 +153,7 @@ func RunMigrations(db *sql.DB) error {
 			date_update TIMESTAMP DEFAULT now()
 		);`,
 
-		// Tabela com o link agradavel da doação 
+		// Tabela com o link agradavel da doação
 		`CREATE TABLE IF NOT EXISTS core.doacao_link (
 			id UUID PRIMARY KEY,
 			id_doacao UUID NOT NULL,
@@ -175,7 +175,6 @@ func RunMigrations(db *sql.DB) error {
 			data_criacao TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now()
 		)`,
 
-
 		`CREATE TABLE IF NOT EXISTS core.pix_qrcode_status (
 			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 			id_pix_qrcode UUID NOT NULL REFERENCES core.pix_qrcode(id) ON DELETE CASCADE,
@@ -194,6 +193,36 @@ func RunMigrations(db *sql.DB) error {
 			finalizado BOOLEAN NOT NULL DEFAULT FALSE,
 			data_pago TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS core.conta_nivel (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			id_user UUID NOT NULL REFERENCES core.user(id),
+			nivel VARCHAR(100) NOT NULL,
+			ativo BOOLEAN DEFAULT false,
+			status VARCHAR(100),
+			data_pagamento TIMESTAMP,
+			tipo_pagamento VARCHAR(100),
+			data_update TIMESTAMP DEFAULT now()
+		);`,
+
+		`CREATE TABLE IF NOT EXISTS core.conta_nivel_pagamento (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			id_user UUID NOT NULL REFERENCES core.user(id),
+			pago_data TIMESTAMP,
+			pago BOOLEAN DEFAULT false,
+			valor NUMERIC(10,2),
+			status VARCHAR(100),
+			codigo VARCHAR(255),
+			data_create TIMESTAMP DEFAULT now(),
+			referente VARCHAR(255),
+			valido BOOLEAN DEFAULT true,
+			txid VARCHAR(255),
+			pg_status VARCHAR(100),
+			cpf VARCHAR(20),
+			chave VARCHAR(255),
+			pixCopiaECola TEXT,
+			expiracao INTEGER
+		);`,
 	}
 
 	for _, query := range queries {

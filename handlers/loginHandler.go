@@ -14,19 +14,32 @@ import (
 // Configurações para o JWT
 var jwtSecretKey = []byte("SUA_CHAVE_SECRETA") // Substitua pela sua chave secreta
 
+// Estrutura para conta_nivel
+type ContaNivel struct {
+	ID            string     `json:"id"`
+	IDUser        string     `json:"id_user"`
+	Nivel         string     `json:"nivel"`
+	Ativo         bool       `json:"ativo"`
+	Status        string     `json:"status"`
+	DataPagamento *time.Time `json:"data_pagamento,omitempty"`
+	TipoPagamento string     `json:"tipo_pagamento"`
+	DataUpdate    time.Time  `json:"data_update"`
+}
+
 // Estrutura para a resposta do token
 type LoginResponse struct {
-	Token string `json:"token"`
-	User  struct {
-		ID        string    `json:"id"`
-		Name      string    `json:"name"`
-		Email     string    `json:"email"`
-		CPF       string    `json:"cpf"`
-		Active    bool      `json:"active"`
-		Inicial   bool      `json:"inicial"`
-		Dell      bool      `json:"dell"`
+	Token      string      `json:"token"`
+	User       struct {
+		ID         string    `json:"id"`
+		Name       string    `json:"name"`
+		Email      string    `json:"email"`
+		CPF        string    `json:"cpf"`
+		Active     bool      `json:"active"`
+		Inicial    bool      `json:"inicial"`
+		Dell       bool      `json:"dell"`
 		DateCreate time.Time `json:"date_create"`
 	} `json:"user"`
+	ContaNivel *ContaNivel `json:"conta_nivel,omitempty"`
 }
 
 // LoginHandler lida com a autenticação de usuários
@@ -50,13 +63,11 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 		password := r.FormValue("password")
 		grantType := r.FormValue("grant_type")
 
-		// Validar os parâmetros
 		if grantType != "password" || username == "" || password == "" {
 			http.Error(w, "Parâmetros inválidos", http.StatusBadRequest)
 			return
 		}
 
-		// Buscar o usuário no banco de dados
 		var user struct {
 			ID         string
 			Name       string
@@ -87,49 +98,74 @@ func LoginHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Validar a senha
 		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 			http.Error(w, "Usuário ou senha inválidos", http.StatusUnauthorized)
 			return
 		}
 
-		// Gerar o token JWT
+		// Gerar token
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 			"sub": user.ID,
 			"exp": time.Now().Add(time.Hour * 24).Unix(),
 		})
-
 		tokenString, err := token.SignedString(jwtSecretKey)
 		if err != nil {
 			http.Error(w, "Erro ao gerar token", http.StatusInternalServerError)
 			return
 		}
 
-		// Montar a resposta
-		response := LoginResponse{
-			Token: tokenString,
-		}
-		response.User = struct {
-			ID        string    `json:"id"`
-			Name      string    `json:"name"`
-			Email     string    `json:"email"`
-			CPF       string    `json:"cpf"`
-			Active    bool      `json:"active"`
-			Inicial   bool      `json:"inicial"`
-			Dell      bool      `json:"dell"`
-			DateCreate time.Time `json:"date_create"`
-		}{
-			ID:        user.ID,
-			Name:      user.Name,
-			Email:     user.Email,
-			CPF:       user.CPF,
-			Active:    user.Active,
-			Inicial:   user.Inicial,
-			Dell:      user.Dell,
-			DateCreate: user.DateCreate,
+		// Buscar conta_nivel
+		var contaNivel ContaNivel
+		err = db.QueryRow(`
+			SELECT id, id_user, nivel, ativo, status, data_pagamento, tipo_pagamento, data_update
+			FROM core.conta_nivel
+			WHERE id_user = $1
+			LIMIT 1
+		`, user.ID).Scan(
+			&contaNivel.ID,
+			&contaNivel.IDUser,
+			&contaNivel.Nivel,
+			&contaNivel.Ativo,
+			&contaNivel.Status,
+			&contaNivel.DataPagamento,
+			&contaNivel.TipoPagamento,
+			&contaNivel.DataUpdate,
+		)
+		if err != nil && err != sql.ErrNoRows {
+			http.Error(w, "Erro ao buscar conta_nivel: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
 
-		// Retornar a resposta
+		// Resposta final
+		response := LoginResponse{
+			Token: tokenString,
+			User: struct {
+				ID         string    `json:"id"`
+				Name       string    `json:"name"`
+				Email      string    `json:"email"`
+				CPF        string    `json:"cpf"`
+				Active     bool      `json:"active"`
+				Inicial    bool      `json:"inicial"`
+				Dell       bool      `json:"dell"`
+				DateCreate time.Time `json:"date_create"`
+			}{
+				ID:         user.ID,
+				Name:       user.Name,
+				Email:      user.Email,
+				CPF:        user.CPF,
+				Active:     user.Active,
+				Inicial:    user.Inicial,
+				Dell:       user.Dell,
+				DateCreate: user.DateCreate,
+			},
+		}
+
+		// Se encontrou dados de conta_nivel
+		if err == nil {
+			response.ContaNivel = &contaNivel
+		}
+
+		// Retorno
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
 	}
