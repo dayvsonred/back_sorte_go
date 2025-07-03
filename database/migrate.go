@@ -223,6 +223,55 @@ func RunMigrations(db *sql.DB) error {
 			pixCopiaECola TEXT,
 			expiracao INTEGER
 		);`,
+
+		`CREATE TABLE IF NOT EXISTS core.visualization (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			id_doacao UUID NOT NULL REFERENCES core.doacao(id) ON DELETE CASCADE,
+			visualization INTEGER DEFAULT 0,
+			donation_like INTEGER DEFAULT 0,
+			love INTEGER DEFAULT 0,
+			shared INTEGER DEFAULT 0,
+			acesse_donation INTEGER DEFAULT 0,
+			create_pix INTEGER DEFAULT 0,
+			create_cartao INTEGER DEFAULT 0,
+			create_paypal INTEGER DEFAULT 0,
+			create_google INTEGER DEFAULT 0,
+			create_pag1 INTEGER DEFAULT 0,
+			create_pag2 INTEGER DEFAULT 0,
+			create_pag3 INTEGER DEFAULT 0,
+			date_create TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
+			date_update TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
+		);`,
+
+		`CREATE TABLE IF NOT EXISTS core.visualization_dth (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			id_visualization UUID NOT NULL REFERENCES core.visualization(id) ON DELETE CASCADE,
+			ip VARCHAR(100),
+			id_user UUID,
+			idioma VARCHAR(50),
+			tema VARCHAR(50),
+			form VARCHAR(100),
+			google VARCHAR(100),
+			google_maps VARCHAR(100),
+			google_ads VARCHAR(100),
+			meta_pixel VARCHAR(100),
+			Cookies_Stripe VARCHAR(100),
+			Cookies_PayPal VARCHAR(100),
+			visitor_info1_live VARCHAR(100),
+			-- Ações do usuário
+			donation_like BOOLEAN DEFAULT false,
+			love BOOLEAN DEFAULT false,
+			shared BOOLEAN DEFAULT false,
+			acesse_donation BOOLEAN DEFAULT false,
+			create_pix BOOLEAN DEFAULT false,
+			create_cartao BOOLEAN DEFAULT false,
+			create_paypal BOOLEAN DEFAULT false,
+			create_google BOOLEAN DEFAULT false,
+			create_pag1 BOOLEAN DEFAULT false,
+			create_pag2 BOOLEAN DEFAULT false,
+			create_pag3 BOOLEAN DEFAULT false,
+			date_create TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
+		);`,
 	}
 
 	for _, query := range queries {

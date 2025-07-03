@@ -524,12 +524,13 @@ func DonationHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
 			return
 		}
+
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		claims := jwt.MapClaims{}
-		_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 			return jwtSecretKey1, nil
 		})
-		if err != nil {
+		if err != nil || !token.Valid {
 			http.Error(w, "Token inválido", http.StatusUnauthorized)
 			return
 		}
@@ -810,6 +811,161 @@ func DonationRescueHandler(db *sql.DB) http.HandlerFunc {
 			"message":          "Resgate processado com sucesso",
 			"valor_disponivel": valorDisponivel,
 			"resgate_total":    totalValor,
+		})
+	}
+}
+
+type DonationVisualizationRequest struct {
+	IDDoacao       string `json:"id_doacao"`
+	IDUser         string `json:"id_user"`
+	Visuaization   bool   `json:"visuaization"`
+	Idioma         string `json:"idioma"`
+	Tema           string `json:"tema"`
+	Form           string `json:"form"`
+	Google         string `json:"google"`
+	GoogleMaps     string `json:"google_maps"`
+	GoogleAds      string `json:"google_ads"`
+	MetaPixel      string `json:"meta_pixel"`
+	CookiesStripe  string `json:"Cookies_Stripe"`
+	CookiesPayPal  string `json:"Cookies_PayPal"`
+	VisitorInfo    string `json:"visitor_info1_live"`
+	DonationLike   bool   `json:"donation_like"`
+	Love           bool   `json:"love"`
+	Shared         bool   `json:"shared"`
+	AcesseDonation bool   `json:"acesse_donation"`
+	CreatePix      bool   `json:"create_pix"`
+	CreateCartao   bool   `json:"create_cartao"`
+	CreatePayPal   bool   `json:"create_paypal"`
+	CreateGoogle   bool   `json:"create_google"`
+	CreatePag1     bool   `json:"create_pag1"`
+	CreatePag2     bool   `json:"create_pag2"`
+	CreatePag3     bool   `json:"create_pag3"`
+}
+
+func DonationVisualization(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req DonationVisualizationRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Erro ao decodificar JSON", http.StatusBadRequest)
+			return
+		}
+
+		// Verifica se existe uma visualização para essa doação
+		var idVisualization uuid.UUID
+		err := db.QueryRow(`SELECT id FROM core.visualization WHERE id_doacao = $1`, req.IDDoacao).Scan(&idVisualization)
+		if err == sql.ErrNoRows {
+			idVisualization = uuid.New()
+			_, err = db.Exec(`INSERT INTO core.visualization (id, id_doacao, date_create, date_update)
+				VALUES ($1, $2, now(), now())`, idVisualization, req.IDDoacao)
+			if err != nil {
+				http.Error(w, "Erro ao criar visualização", http.StatusInternalServerError)
+				return
+			}
+		} else if err != nil {
+			http.Error(w, "Erro ao buscar visualização", http.StatusInternalServerError)
+			return
+		}
+
+		// Incrementa visualizações e interações se aplicável
+		if req.Visuaization || req.DonationLike || req.Love || req.Shared || req.AcesseDonation ||
+			req.CreatePix || req.CreateCartao || req.CreatePayPal || req.CreateGoogle || req.CreatePag1 || req.CreatePag2 || req.CreatePag3 {
+
+			fields := []string{}
+			if req.Visuaization {
+				fields = append(fields, "visualization = visualization + 1")
+			}
+			if req.DonationLike {
+				fields = append(fields, "like = like + 1")
+			}
+			if req.Love {
+				fields = append(fields, "love = love + 1")
+			}
+			if req.Shared {
+				fields = append(fields, "shared = shared + 1")
+			}
+			if req.AcesseDonation {
+				fields = append(fields, "acesse_donation = acesse_donation + 1")
+			}
+			if req.CreatePix {
+				fields = append(fields, "create_pix = create_pix + 1")
+			}
+			if req.CreateCartao {
+				fields = append(fields, "create_cartao = create_cartao + 1")
+			}
+			if req.CreatePayPal {
+				fields = append(fields, "create_paypal = create_paypal + 1")
+			}
+			if req.CreateGoogle {
+				fields = append(fields, "create_google = create_google + 1")
+			}
+			if req.CreatePag1 {
+				fields = append(fields, "create_pag1 = create_pag1 + 1")
+			}
+			if req.CreatePag2 {
+				fields = append(fields, "create_pag2 = create_pag2 + 1")
+			}
+			if req.CreatePag3 {
+				fields = append(fields, "create_pag3 = create_pag3 + 1")
+			}
+
+			updateQuery := `UPDATE core.visualization SET ` +
+				strings.Join(fields, ", ") + `, date_update = now() WHERE id = $1`
+			_, err = db.Exec(updateQuery, idVisualization)
+			if err != nil {
+				http.Error(w, "Erro ao atualizar contadores", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// Inserir em visualization_dth
+		_, err = db.Exec(`
+			INSERT INTO core.visualization_dth (
+				id, id_visualization, ip, id_user, idioma, tema, form, google, google_maps, google_ads,
+				meta_pixel, Cookies_Stripe, Cookies_PayPal, visitor_info1_live, donation_like, love, shared,
+				acesse_donation, create_pix, create_cartao, create_paypal, create_google, create_pag1,
+				create_pag2, create_pag3, date_create
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+				$11, $12, $13, $14, $15, $16, $17,
+				$18, $19, $20, $21, $22, $23,
+				$24, $25, $26
+			)
+		`,
+			uuid.New(),
+			idVisualization,
+			r.RemoteAddr,
+			req.IDUser,
+			req.Idioma,
+			req.Tema,
+			req.Form,
+			req.Google,
+			req.GoogleMaps,
+			req.GoogleAds,
+			req.MetaPixel,
+			req.CookiesStripe,
+			req.CookiesPayPal,
+			req.VisitorInfo,
+			req.DonationLike,
+			req.Love,
+			req.Shared,
+			req.AcesseDonation,
+			req.CreatePix,
+			req.CreateCartao,
+			req.CreatePayPal,
+			req.CreateGoogle,
+			req.CreatePag1,
+			req.CreatePag2,
+			req.CreatePag3,
+			time.Now(),
+		)
+		if err != nil {
+			http.Error(w, "Erro ao registrar detalhe de visualização", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Visualização registrada com sucesso",
 		})
 	}
 }
