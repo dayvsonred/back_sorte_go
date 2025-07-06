@@ -641,3 +641,88 @@ func UserShowHandler(db *sql.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(response)
 	}
 }
+
+// Estrutura do JSON recebido
+type UserNameChangeRequest struct {
+	IDUser  string `json:"id_user"`
+	OldName string `json:"old_name"`
+	NewName string `json:"new_name"`
+}
+
+// Handler
+func UserNameChangeHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		// Obter token
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Token não fornecido", http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+		// Validar e extrair claims config.GetJwtSecret()
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecretKey, nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Token inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// ID do token
+		idFromToken, ok := claims["sub"].(string)
+		if !ok || idFromToken == "" {
+			http.Error(w, "ID do usuário inválido", http.StatusUnauthorized)
+			return
+		}
+
+		// Decodificar body
+		var req UserNameChangeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Erro ao processar o JSON", http.StatusBadRequest)
+			return
+		}
+
+		// Verifica se o ID do body bate com o ID do token
+		if req.IDUser != idFromToken {
+			http.Error(w, "Usuário não autorizado a alterar este nome", http.StatusForbidden)
+			return
+		}
+
+		// Verificar se o nome antigo está correto
+		var currentName string
+		err = db.QueryRow(`SELECT name FROM core.user WHERE id = $1`, req.IDUser).Scan(&currentName)
+		if err == sql.ErrNoRows {
+			http.Error(w, "Usuário não encontrado", http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, "Erro ao buscar usuário: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if currentName != req.OldName {
+			http.Error(w, "O nome antigo não corresponde ao cadastrado", http.StatusBadRequest)
+			return
+		}
+
+		// Atualizar nome
+		_, err = db.Exec(`
+			UPDATE core.user
+			SET name = $1, date_update = $2
+			WHERE id = $3
+		`, req.NewName, time.Now(), req.IDUser)
+		if err != nil {
+			http.Error(w, "Erro ao atualizar nome: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Retorno de sucesso
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Nome atualizado com sucesso",
+		})
+	}
+}

@@ -36,6 +36,9 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	// dados ususario criador da doação para exibir na doação
 	router.HandleFunc("/users/show/{id}", handlers.UserShowHandler(db)).Methods("GET")
 
+	//Muda nome usuario
+	router.HandleFunc("/users/nameChange", handlers.UserNameChangeHandler(db)).Methods("POST")
+
 	// Rota para fazer login com usuario email e senha retorna tokemn
 	//router.Handle("/login", middleware.CorsMiddleware(handlers.LoginHandler(db))).Methods("POST")
 	router.HandleFunc("/login", handlers.LoginHandler(db)).Methods("POST")
