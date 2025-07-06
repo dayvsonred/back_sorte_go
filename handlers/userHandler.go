@@ -596,3 +596,48 @@ func UserProfileImageHandler(db *sql.DB) http.HandlerFunc {
 		w.Write([]byte(fmt.Sprintf(`{"image_url": "%s"}`, url)))
 	}
 }
+
+// UserShowHandler busca e retorna os dados básicos do usuário pelo ID
+func UserShowHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		// Extrair o ID da URL
+		vars := mux.Vars(r)
+		id := vars["id"]
+		if id == "" {
+			http.Error(w, "ID do usuário não fornecido", http.StatusBadRequest)
+			return
+		}
+
+		// Consulta no banco
+		var (
+			name       string
+			email      string
+			dateCreate string
+		)
+		err := db.QueryRow(`
+			SELECT name, email, date_create
+			FROM core.user
+			WHERE id = $1
+		`, id).Scan(&name, &email, &dateCreate)
+
+		if err == sql.ErrNoRows {
+			http.Error(w, "Usuário não encontrado", http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, "Erro ao buscar usuário: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Retornar resposta JSON
+		response := map[string]interface{}{
+			"name":        name,
+			"email":       email,
+			"date_create": dateCreate,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}
+}
