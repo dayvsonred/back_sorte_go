@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"mime/multipart"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -40,4 +42,9 @@ func UploadToS3(file multipart.File, filename, bucket string) (string, error) {
 
 	// Retorna a URL pública do arquivo
 	return result.Location, nil
+}
+
+func StringToFloat(str string) (float64, error) {
+	str = strings.ReplaceAll(str, ",", ".")
+	return strconv.ParseFloat(str, 64)
 }

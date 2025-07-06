@@ -67,6 +67,9 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	// registra lod de atividades na doação 
 	router.HandleFunc("/donation/visualization", handlers.DonationVisualization(db)).Methods("POST")
 
+	//rota para crear usuario e doação ao mesmo tempo 
+	router.HandleFunc("/donation/createUserAndDonation", handlers.DonationCreateSimpleHandler(db)).Methods("POST")
+
 	// Rota testa token e gerado pelo certificado e valido
 	//router.HandleFunc("/testToken", handlers.TestTokenHandler()).Methods("GET")
 

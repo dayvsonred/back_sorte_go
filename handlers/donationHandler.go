@@ -17,6 +17,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 )
@@ -966,6 +967,144 @@ func DonationVisualization(db *sql.DB) http.HandlerFunc {
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]string{
 			"message": "Visualização registrada com sucesso",
+		})
+	}
+}
+
+// DonationCreateSimpleHandler cria um usuário e uma campanha de doação
+func DonationCreateSimpleHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Parse do formulário multipart
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			http.Error(w, "Erro ao ler formulário: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Recebe campos do formulário
+		fullName := r.FormValue("fullName")
+		cpf := r.FormValue("cpf")
+		email := r.FormValue("email")
+		senha := r.FormValue("senha")
+
+		titulo := r.FormValue("titulo")
+		metaStr := r.FormValue("meta")
+		categoria := r.FormValue("categoria")
+		texto := r.FormValue("texto")
+
+		// Validação simples
+		if fullName == "" || cpf == "" || email == "" || senha == "" || titulo == "" || metaStr == "" || categoria == "" || texto == "" {
+			http.Error(w, "Campos obrigatórios ausentes", http.StatusBadRequest)
+			return
+		}
+
+		// Hash da senha
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(senha), bcrypt.DefaultCost)
+		if err != nil {
+			http.Error(w, "Erro ao gerar hash da senha: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Verificar duplicação de email
+		var exists bool
+		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM core.user WHERE email = $1)", email).Scan(&exists)
+		if err != nil {
+			http.Error(w, "Erro ao verificar email: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if exists {
+			http.Error(w, "Email já cadastrado", http.StatusBadRequest)
+			return
+		}
+
+		userID := uuid.NewString()
+		now := time.Now()
+
+		// Cria usuário
+		_, err = db.Exec(`
+			INSERT INTO core.user (id, name, email, password, cpf, active, inicial, dell, date_create, date_update)
+			VALUES ($1, $2, $3, $4, $5, true, false, false, $6, $6)
+		`, userID, fullName, email, string(hashedPassword), cpf, now)
+		if err != nil {
+			http.Error(w, "Erro ao criar usuário: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Cria conta_nivel padrão
+		_, err = db.Exec(`
+			INSERT INTO core.conta_nivel (id, id_user, nivel, ativo, status, tipo_pagamento, data_update)
+			VALUES ($1, $2, 'BASICO', false, 'INATIVO', 'INATIVO', $3)
+		`, uuid.NewString(), userID, now)
+		if err != nil {
+			http.Error(w, "Erro ao criar conta_nivel: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Processar meta como float
+		meta, err := utils.StringToFloat(metaStr)
+		if err != nil {
+			http.Error(w, "Meta inválida", http.StatusBadRequest)
+			return
+		}
+
+		// Processar imagem
+		file, header, err := r.FormFile("image")
+		if err != nil {
+			http.Error(w, "Erro ao obter imagem: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		imgFileName := fmt.Sprintf("%s_%d_%s", userID, time.Now().Unix(), header.Filename)
+		imgPath, err := utils.UploadToS3(file, imgFileName, config.GetawsBucketNameImgDoacao())
+		if err != nil {
+			http.Error(w, "Erro ao subir imagem: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Cria doação
+		donationID := uuid.NewString()
+		_, err = db.Exec(`
+			INSERT INTO core.doacao (id, id_user, name, valor, active, dell, closed, date_start, date_create)
+			VALUES ($1, $2, $3, $4, true, false, false, $5, $5)
+		`, donationID, userID, titulo, meta, now)
+		if err != nil {
+			http.Error(w, "Erro ao salvar doação: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Detalhes da doação
+		_, err = db.Exec(`
+			INSERT INTO core.doacao_details (id, id_doacao, texto, img_caminho, area)
+			VALUES ($1, $2, $3, $4, $5)
+		`, uuid.NewString(), donationID, texto, imgPath, categoria)
+		if err != nil {
+			http.Error(w, "Erro ao salvar detalhes da doação: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Nome do link
+		nomeLink, err := generateUniqueLinkName(db, titulo)
+		if err != nil {
+			http.Error(w, "Erro ao gerar nome_link: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		_, err = db.Exec(`
+			INSERT INTO core.doacao_link (id, id_doacao, nome_link)
+			VALUES ($1, $2, $3)
+		`, uuid.NewString(), donationID, nomeLink)
+		if err != nil {
+			http.Error(w, "Erro ao salvar nome_link: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Resposta
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"message":   "Usuário e doação criados com sucesso",
+			"user_id":   userID,
+			"donation":  donationID,
+			"nome_link": nomeLink,
+			"img":       imgPath,
 		})
 	}
 }
