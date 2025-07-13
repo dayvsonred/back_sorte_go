@@ -272,6 +272,20 @@ func RunMigrations(db *sql.DB) error {
 			create_pag3 BOOLEAN DEFAULT false,
 			date_create TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 		);`,
+
+
+		`CREATE TABLE IF NOT EXISTS core.contact_us (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			nome VARCHAR(255) NOT NULL,
+			email VARCHAR(255) NOT NULL,
+			mensagem VARCHAR(200) NOT NULL,
+			ip VARCHAR(20),
+			location VARCHAR(200),
+			token VARCHAR(200),
+			view BOOLEAN DEFAULT false,
+			data_create TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
+		);`,
+
 	}
 
 	for _, query := range queries {

@@ -1098,7 +1098,8 @@ func DonationCreateSimpleHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Resposta
+		// Retorno de sucesso
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"message":   "Usuário e doação criados com sucesso",
 			"user_id":   userID,

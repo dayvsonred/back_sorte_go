@@ -86,5 +86,8 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	// inicializar busca de todo os pagamento com status em andamento não finalizado ainda com prazo de venciamnete ativos pendeentes de verificação 
 	router.HandleFunc("/pix/monitora/all", handlers.MonitorarStatusAllPagamentosHandler(db)).Methods("GET")
 
+	//mensagem de fale conosco // open 
+	router.HandleFunc("/contact/mensagem", handlers.ContactMensagemHandler(db)).Methods("POST")
+
 	return router
 }
