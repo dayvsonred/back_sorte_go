@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"BACK_SORTE_GO/config"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -117,6 +119,89 @@ func jsonResponse(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+const passwordRecoverTokenLength = 150
+const passwordRecoverTokenChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func generateRandomToken(length int) (string, error) {
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = passwordRecoverTokenChars[int(b[i])%len(passwordRecoverTokenChars)]
+	}
+	return string(b), nil
+}
+
+func UserPasswordRecoverStartHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Email string `json:"email"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Erro ao processar o JSON", http.StatusBadRequest)
+			return
+		}
+		if req.Email == "" {
+			http.Error(w, "Email e obrigatorio", http.StatusBadRequest)
+			return
+		}
+
+		var userID string
+		err := db.QueryRow(`SELECT id FROM core.user WHERE email = $1`, req.Email).Scan(&userID)
+		if err == sql.ErrNoRows {
+			http.Error(w, "Email inexistente", http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, "Erro ao buscar usuario: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		var already bool
+		err = db.QueryRow(`
+			SELECT EXISTS (
+				SELECT 1
+				FROM core.password_recover
+				WHERE email = $1 AND date_valid = CURRENT_DATE
+			)
+		`, req.Email).Scan(&already)
+		if err != nil {
+			http.Error(w, "Erro ao verificar recuperacao: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if already {
+			http.Error(w, "Email ja enviado na data atual, por favor consulte seu email ou entre em contato com administradores", http.StatusBadRequest)
+			return
+		}
+
+		token, err := generateRandomToken(passwordRecoverTokenLength)
+		if err != nil {
+			http.Error(w, "Erro ao gerar token", http.StatusInternalServerError)
+			return
+		}
+
+		_, err = db.Exec(`
+			INSERT INTO core.password_recover (
+				id, id_user, email, token, validated, to_send, attempt, blocked, date_valid
+			) VALUES (
+				$1, $2, $3, $4, false, false, 0, false, CURRENT_DATE
+			)
+		`, uuid.NewString(), userID, req.Email, token)
+		if err != nil {
+			http.Error(w, "Erro ao criar recuperacao: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("password recover token for %s: %s", req.Email, token)
+
+		jsonResponse(w, http.StatusOK, map[string]string{
+			"message": "link de atualização de senha enviado para seu email. por favor verifique seu email",
+		})
+	}
 }
 
 func UserPasswordChangeHandler(db *sql.DB) http.HandlerFunc {

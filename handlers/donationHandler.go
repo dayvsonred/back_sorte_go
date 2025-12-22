@@ -624,7 +624,7 @@ func DonationHandler(db *sql.DB) http.HandlerFunc {
 		// Inserir em doacao_pagamentos
 		_, err = tx.Exec(`
 			INSERT INTO core.doacao_pagamentos (id, id_doacao, valor_disponivel, valor_tranferido, solicitado, status, data_update)
-			VALUES ($1, $2, 0, 0, NULL, 'START', $3)
+			VALUES ($1, $2, 0, 0, false, 'START', $3)
 		`, uuid.New(), donationID, now)
 		if err != nil {
 			http.Error(w, "Erro ao salvar dados iniciais de pagamento: "+err.Error(), http.StatusInternalServerError)
@@ -1095,6 +1095,16 @@ func DonationCreateSimpleHandler(db *sql.DB) http.HandlerFunc {
 		`, uuid.NewString(), donationID, nomeLink)
 		if err != nil {
 			http.Error(w, "Erro ao salvar nome_link: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Inserir em doacao_pagamentos
+		_, err = db.Exec(`
+			INSERT INTO core.doacao_pagamentos (id, id_doacao, valor_disponivel, valor_tranferido, solicitado, status, data_update)
+			VALUES ($1, $2, 0, 0, false, 'START', $3)
+		`, uuid.New(), donationID, now)
+		if err != nil {
+			http.Error(w, "Erro ao salvar dados iniciais de pagamento: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 

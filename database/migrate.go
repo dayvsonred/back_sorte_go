@@ -66,6 +66,20 @@ func RunMigrations(db *sql.DB) error {
 			date TIMESTAMP DEFAULT now()
 		);`,
 
+		// Tabela password_recover
+		`CREATE TABLE IF NOT EXISTS core.password_recover (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			id_user UUID REFERENCES core.user(id),
+			email VARCHAR(255) UNIQUE NOT NULL,
+			token VARCHAR(200),
+			validated BOOLEAN DEFAULT false,
+			to_send BOOLEAN DEFAULT false,
+			attempt INT8,
+			blocked BOOLEAN DEFAULT false,
+			date_valid DATE,
+			data_create TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
+		);`,
+
 		// Tabela doacao
 		`CREATE TABLE IF NOT EXISTS core.doacao (
 			id UUID PRIMARY KEY,

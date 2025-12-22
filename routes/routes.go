@@ -18,6 +18,9 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	// Muda password
 	router.HandleFunc("/users/passwordChange", handlers.UserPasswordChangeHandler(db)).Methods("POST")
 
+	// Inicia recuperacao de senha
+	router.HandleFunc("/users/passwordRecover", handlers.UserPasswordRecoverStartHandler(db)).Methods("POST")
+
 	// registra conta bancaria de recebimento 
 	router.HandleFunc("/users/bankAccount", handlers.UserBankAccountHandler(db)).Methods("POST")
 
