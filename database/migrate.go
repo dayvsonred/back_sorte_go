@@ -70,7 +70,7 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS core.password_recover (
 			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 			id_user UUID REFERENCES core.user(id),
-			email VARCHAR(255) UNIQUE NOT NULL,
+			email VARCHAR(255) NOT NULL,
 			token VARCHAR(200),
 			validated BOOLEAN DEFAULT false,
 			to_send BOOLEAN DEFAULT false,
@@ -287,7 +287,6 @@ func RunMigrations(db *sql.DB) error {
 			date_create TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 		);`,
 
-
 		`CREATE TABLE IF NOT EXISTS core.contact_us (
 			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 			nome VARCHAR(255) NOT NULL,
@@ -299,7 +298,6 @@ func RunMigrations(db *sql.DB) error {
 			view BOOLEAN DEFAULT false,
 			data_create TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 		);`,
-
 	}
 
 	for _, query := range queries {

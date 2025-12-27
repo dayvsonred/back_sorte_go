@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -178,6 +177,16 @@ func UserPasswordRecoverStartHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		_, err = db.Exec(`
+			UPDATE core.password_recover
+			SET blocked = true
+			WHERE email = $1 AND blocked = false
+		`, req.Email)
+		if err != nil {
+			http.Error(w, "Erro ao bloquear tokens anteriores: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		token, err := generateRandomToken(passwordRecoverTokenLength)
 		if err != nil {
 			http.Error(w, "Erro ao gerar token", http.StatusInternalServerError)
@@ -196,10 +205,93 @@ func UserPasswordRecoverStartHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("password recover token for %s: %s", req.Email, token)
-
 		jsonResponse(w, http.StatusOK, map[string]string{
 			"message": "link de atualização de senha enviado para seu email. por favor verifique seu email",
+		})
+	}
+}
+
+func UserPasswordRecoverConfirmHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Email    string `json:"email"`
+			Token    string `json:"token"`
+			Password string `json:"senha"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Erro ao processar o JSON", http.StatusBadRequest)
+			return
+		}
+		if req.Email == "" || req.Token == "" || req.Password == "" {
+			http.Error(w, "Email, token e senha sao obrigatorios", http.StatusBadRequest)
+			return
+		}
+
+		var (
+			userID      string
+			storedToken string
+			attempt     int64
+		)
+
+		err := db.QueryRow(`
+			SELECT id_user, token, attempt
+			FROM core.password_recover
+			WHERE email = $1 AND validated = false AND blocked = false AND attempt <= 5
+		`, req.Email).Scan(&userID, &storedToken, &attempt)
+		if err == sql.ErrNoRows {
+			http.Error(w, "Recuperacao nao encontrada ou bloqueada", http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, "Erro ao buscar recuperacao: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if storedToken != req.Token {
+			newAttempt := attempt + 1
+			blocked := newAttempt > 5
+			_, err = db.Exec(`
+				UPDATE core.password_recover
+				SET attempt = $1, blocked = $2
+				WHERE email = $3
+			`, newAttempt, blocked, req.Email)
+			if err != nil {
+				http.Error(w, "Erro ao atualizar tentativa: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, "Token invalido", http.StatusUnauthorized)
+			return
+		}
+
+		newHashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			http.Error(w, "Erro ao criptografar senha", http.StatusInternalServerError)
+			return
+		}
+
+		_, err = db.Exec(`
+			UPDATE core.user
+			SET password = $1, date_update = NOW()
+			WHERE id = $2
+		`, newHashedPassword, userID)
+		if err != nil {
+			http.Error(w, "Erro ao atualizar a senha: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		_, err = db.Exec(`
+			UPDATE core.password_recover
+			SET validated = true, blocked = true
+			WHERE email = $1
+		`, req.Email)
+		if err != nil {
+			http.Error(w, "Erro ao finalizar recuperacao: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		jsonResponse(w, http.StatusOK, map[string]string{
+			"message": "Senha alterada com sucesso",
 		})
 	}
 }
