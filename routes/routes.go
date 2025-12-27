@@ -1,14 +1,15 @@
 package routes
 
 import (
-	"database/sql"
 	"BACK_SORTE_GO/handlers"
+	"database/sql"
+
 	"github.com/gorilla/mux"
 )
 
 func SetupRoutes(db *sql.DB) *mux.Router {
 	router := mux.NewRouter()
-	
+
 	// Health Check
 	router.HandleFunc("/health", handlers.HealthCheckHandler()).Methods("GET")
 
@@ -24,18 +25,21 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	// Confirma token e altera senha sem lembrar a senha
 	router.HandleFunc("/users/passwordConfirmToken", handlers.UserPasswordRecoverConfirmHandler(db)).Methods("POST")
 
-	// registra conta bancaria de recebimento 
+	// Gera link para recuperação de senha
+	router.HandleFunc("/users/passwordRecoverLink", handlers.UserPasswordRecoverLinkHandler(db)).Methods("GET")
+
+	// registra conta bancaria de recebimento
 	router.HandleFunc("/users/bankAccount", handlers.UserBankAccountHandler(db)).Methods("POST")
 
-	// alterar conta bancaria de recebimento 
+	// alterar conta bancaria de recebimento
 	router.HandleFunc("/users/bankAccount", handlers.UserBankAccountUpdateHandler(db)).Methods("PATCH")
 
-	// Busca conta bancaria de recebimento 
+	// Busca conta bancaria de recebimento
 	router.HandleFunc("/users/bankAccount", handlers.UserBankAccountGetHandler(db)).Methods("GET")
 
 	//atualiza img do perfil do usuario
 	router.HandleFunc("/users/uploadProfileImage", handlers.UploadUserProfileImageHandler(db)).Methods("POST")
-	
+
 	//get img do perfil do usuario
 	router.HandleFunc("/users/ProfileImage/{id}", handlers.UserProfileImageHandler(db)).Methods("GET")
 
@@ -64,35 +68,35 @@ func SetupRoutes(db *sql.DB) *mux.Router {
 	//buscar as mensagens visíveis da doação
 	router.HandleFunc("/donation/mensagem", handlers.DonationMensagesHandler(db)).Methods("GET")
 
-	//encerra envento de doação 
+	//encerra envento de doação
 	router.HandleFunc("/donation/closed/{id}", handlers.DonationClosedHandler(db)).Methods("GET")
 
 	//prepara os valores para serem enviado para o criado da doação e bloquei visualização da doação
 	router.HandleFunc("/donation/rescue/{id}", handlers.DonationRescueHandler(db)).Methods("GET")
 
-	// registra lod de atividades na doação 
+	// registra lod de atividades na doação
 	router.HandleFunc("/donation/visualization", handlers.DonationVisualization(db)).Methods("POST")
 
-	//rota para crear usuario e doação ao mesmo tempo 
+	//rota para crear usuario e doação ao mesmo tempo
 	router.HandleFunc("/donation/createUserAndDonation", handlers.DonationCreateSimpleHandler(db)).Methods("POST")
 
 	// Rota testa token e gerado pelo certificado e valido
 	//router.HandleFunc("/testToken", handlers.TestTokenHandler()).Methods("GET")
 
-	//rota para crair pix teste 
+	//rota para crair pix teste
 	router.HandleFunc("/pix/create", handlers.CreatePixTokenHandler(db)).Methods("POST")
 
 	router.HandleFunc("/pix/status/{txid}", handlers.PixChargeStatusHandler()).Methods("GET")
-	
+
 	router.HandleFunc("/pix/monitora/{txid}", handlers.MonitorarStatusPagamentoHandler(db)).Methods("POST")
 
-	// valor total da doação e total de doadores 
+	// valor total da doação e total de doadores
 	router.HandleFunc("/pix/total/{id}", handlers.DonationSummaryByIDHandler(db)).Methods("GET")
 
-	// inicializar busca de todo os pagamento com status em andamento não finalizado ainda com prazo de venciamnete ativos pendeentes de verificação 
+	// inicializar busca de todo os pagamento com status em andamento não finalizado ainda com prazo de venciamnete ativos pendeentes de verificação
 	router.HandleFunc("/pix/monitora/all", handlers.MonitorarStatusAllPagamentosHandler(db)).Methods("GET")
 
-	//mensagem de fale conosco // open 
+	//mensagem de fale conosco // open
 	router.HandleFunc("/contact/mensagem", handlers.ContactMensagemHandler(db)).Methods("POST")
 
 	return router

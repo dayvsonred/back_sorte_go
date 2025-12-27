@@ -903,3 +903,45 @@ func UserNameChangeHandler(db *sql.DB) http.HandlerFunc {
 		})
 	}
 }
+
+func UserPasswordRecoverLinkHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		email := r.URL.Query().Get("email")
+		key := r.URL.Query().Get("key")
+
+		if email == "" || key == "" {
+			http.Error(w, "Email e key são obrigatórios", http.StatusBadRequest)
+			return
+		}
+
+		if key != config.GetPasswordResetKey() {
+			http.Error(w, "Key inválida", http.StatusUnauthorized)
+			return
+		}
+
+		var token string
+		err := db.QueryRow(`
+			SELECT token
+			FROM core.password_recover
+			WHERE email = $1 AND attempt <= 5 AND blocked = false AND validated = false
+			ORDER BY data_create DESC
+			LIMIT 1
+		`, email).Scan(&token)
+
+		if err == sql.ErrNoRows {
+			http.Error(w, "Nenhum registro ativo encontrado para este email", http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, "Erro ao buscar registro: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		link := fmt.Sprintf("http://localhost/auth/password-reset?token=%s&email=%s", token, email)
+		mensagem := fmt.Sprintf("Clique aqui para resetar sua senha: %s", link)
+
+		jsonResponse(w, http.StatusOK, map[string]string{
+			"mensagem": mensagem,
+		})
+	}
+}

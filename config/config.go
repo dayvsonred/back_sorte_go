@@ -42,7 +42,6 @@ func Getclient_id() string {
 	return client_id
 }
 
-
 func GetCredentials() map[string]interface{} {
 	// Converte SANDBOX para booleano
 	sandbox, err := strconv.ParseBool(os.Getenv("SANDBOX"))
@@ -68,7 +67,6 @@ func GetCredentials() map[string]interface{} {
 	}
 }
 
-
 func GetAwsRegion() string {
 	return os.Getenv("AWS_REGION")
 }
@@ -87,6 +85,10 @@ func GetAwsBucket() string {
 
 func GetJwtSecret() string {
 	return os.Getenv("JWT_SECRET")
+}
+
+func GetPasswordResetKey() string {
+	return os.Getenv("PASSWORD_RESET_KEY")
 }
 
 func GetawsBucketNameImgDoacao() string {
